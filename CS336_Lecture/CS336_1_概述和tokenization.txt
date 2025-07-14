@@ -1,0 +1,396 @@
+2025年7月14日 下午 10:11|1小时 18分钟 58秒
+
+关键词:
+train model、good models、big model、language models、open models、full model、model architecture、small models、base model、frontier models、model size、modeling decisions、own models、model parallelism、model parameters、parameter models、smaller model、particular model
+
+文字记录:
+说话人 1 00:05 
+Welcome everyone. This is CS 3,36 language models from scratch. And this is our the core staff. So I'm Percy, one of your instructors. I'm really excited about this class because it really allows you to see the whole language modeling building pipeline end to end, including data systems and modeling tattoo. I'll be co teaching with him. So I'll let everyone introduce themselves. Hi everyone.
+
+说话人 2 00:32 
+I'm Pansy. I'm one of the code instructors. I'll be giving lecture in a week or two, probably few weeks. I'm really excited about this class. We, Percy and I, you know, spent a while being able to struggle thinking like, what's the really deep technical stuff that we can teach our students today? And I think one of the things that is really, you gotta build it from scratch to understand it. So I'm hoping that's sort of the ethics that came away from. Hey everyone, I'm Robert. I actually failed this class when I took it, but now I'm your CA. So what do you say, everyone? I'm Neil.
+
+说话人 2 01:12 
+I'm a third year student, PhD student in the CS department. Yeah, mostly interested in my research on synthetic data with models, reasoning, all that stuff. So yeah, should be up on the quarter. Hey guys, I'm Marcel. I'm a secondary Peach team I work with and that's good. I, these things are working on different stuff.
+
+说话人 1 01:33 
+And he was a topper of many leaderboards from last year. So he's the number to beat. Okay. All right. Well, thanks everyone. So let's continue. As Satu mentioned, this is the second time we're teaching the class. We've grown the class by around 50% of three TAs instead of two. And one big thing is we're making all the lectures on YouTube so that the world can learn how to build language models from scratch. Okay, so why do we decide to make this course and endure all the pain? So let's ask GPT four. So if you ask a y teach of course on building language models from scratch, it the reply is teaching of course provides foundational understanding of techniques, fosters innovation, kind of the typical kind of generic blathers.
+
+说话人 1 02:27 
+Okay, so here's a real reason. So we're in a bit of a crisis, I would say. Researchers are becoming more and more disconnected from the underlying technology. Eight years ago, researchers would implement and train their own models in AI. Even six years ago, you at least take the models like Bert and download them and fine tune them. And now many people can just get away with prompting a proprietary model. So this is not necessarily bad, right? Because as you enter these layers of extraction, we can all do more. And a lot of research has been unlocked by, be it the simplicity of being a prompt, a language model. And I do a fair of my share of prompting, so there's nothing wrong with that. But it's also remember that these abstractions are leaky. So in contrast to programming languages or operating systems, you don't really understand what the abstraction is. It's a string in and string out, I guess. And I would say that there's still a lot of fundamental research to be done that required tearing up the stack and co designing different aspects of the data and the systems and the model. And I think really that full understanding of this technology is necessary for fundamental research. So that's why this class exists. We want to enable the fundamental research to continue. And our philosophy is to understand it, you have to build it.
+
+说话人 1 03:59 
+So there's one small problem here, and this is because of the industrialization of language models. So GPT four has rumored to be 1.8 trillion parameters cost hundred million dollars to train. You have xai a building the clusters with 200,000H1 hundreds. If you can imagine that there's an investment of over 500 billion, you know, supposedly over four years. So these are pretty large numbers. Right. And furthermore, there's no public details on how these models are being built here from GBD4. This is even two years ago. They very honestly say that due to the competitive landscape and simply safety limitations, we're gonna disclose no details.
+
+说话人 1 04:50 
+Okay, so this is the state of the world right now. And so in some sense, frontier models are out of reach for us. So if you came into the. Class thinking, you're each gonna train your own GPT for sorry. So we're gonna build small language models.
+
+说话人 1 05:10 
+But the problem is that these might not be representative. And here's some of two examples to illustrate why. So here's this kind of a simple one. If you look at the fraction of flops spent in the tension layers of a transformer versus a MLP, this changes quite a bit. So this is a tweet from Steven Roller from quite a few years ago, but it's, this is still true. If you look at small models, it looks like the number of flops in the attention versus the MLP layers are roughly comparable. But if you go up to 175 billion, then the, you know, the MLPs really dominate, right? So why does this matter? Well, if you spend a lot of time at small scale and you're optimizing the tension, you might be optimizing the wrong thing because at larger scale, it it doesn't it should get gets washed out. This is kind of a simple example because you can literally make this plot without actually any compute. You just like do its napkin math. Here's something that's a little bit harder to grapple with. It's just emergent behavior.
+
+说话人 1 06:22 
+So this is a paper from Jason Way from in 2022. And here this plot shows that as you increase the amount of training flops, and you look at accuracy a bunch on a bunch of tasks, you'll see that for a while it looks like the accuracy, nothing is happening. And all of a sudden you get these kind of, you know, merchant of various phenomena, like in context learning. So if you were hanging around at this scale, you would have been concluding that, well, these language models really don't work, when in fact you had to scale up to get that behavior. So don't despair. We can still learn something in this class and but we have to be very precise about what we're learning. So there's three types of knowledge. There's the mechanics of how things work. This we can teach you what a transformer is. You can you implement a transformer. We can teach you how model parallelism leverages GPUs efficiently. These are just like kind of the raw in ingredients, the mechanics. So that's fine. We can also teach you mindset. So this is something a bit more subtle and seems like a little bit, you know, fuzzy, but this is actually in some ways more important, I would say, because the mindset that we're gonna take is that we want to squeeze as most out of the hardware as possible and takes scaling seriously, right? Because in some sense, the mechanics, all of those, we'll see later that all of these ingredients have been around for a while.
+
+说话人 1 07:58 
+But it was, oh, really, I think the scaling mindset that OpenAI pioneer that led to this next generation of AI models. So mindset, I think hopefully we can, you know, bang into you that to think in a certain way. And then thirdly is intuitions. And this is about which data and modeling decisions lead to good models. This unfortunately, we can only partially teach you. And this is because what architectures and what datasets work at most scales might not be the same ones that work at large scales. And, but, you know, that's just, but hopefully you got two and a half out of three. So that's pretty good bang for your buck.
+
+说话人 1 08:44 
+Okay. Speaking of intuitions, there's a sort of, I guess, sad reality of things that, you know, you can tell a lot of stories about why certain things in the transformer the way they are, but sometimes it's just, you know, come you do the experiments and the experiment speak. So for example, there's this known shazier paper that introduced the swiglu, which is something that will see a bit more in the in this class, which is a type of non linearity. And then the conclusion, you know, the results are quite good and this got adopted. But in the conclusion, there is this honest statement that we offer no explanation except for this is divine benevolence. So there you go. This is the extent to our under of our understanding.
+
+说话人 1 09:32 
+Okay, so now let's talk about this bitter lesson that I'm sure people have, you know, heard about. I think there's a sort of a misconception that a bitter lesson means that scale is all that matters, algorithms don't matter. All you do is pump more capital into building the model, and you're good to go.
+
+说话人 1 09:49 
+I think this couldn't be farther from the truth. I think the right interpretation is that algorithms at scale is what matters. And because at the end of the day. Your accuracy of your model is really a product of your efficiency and the number of resources you put in. And actually, efficiency, if you think about, is way more important at a larger scale. Because if you're spending, you know, hundreds of millions dollars, you cannot afford to be wasteful in the same way that if you're looking at running US job on your, yeah, on your local cluster, you might run it again, you fail, you debug it and you, if you look at actually the utilization and use, I'm sure open a is way more efficient than any of us right now. So efficiency really is important. And furthermore, this, I think is, this point is maybe not as well appreciated in the sort of scaling rhetoric, so to speak, which is that if you look at efficiency, which is a combination of hardware algorithms, but if you just look at the algorithm efficiency, there's this nice open ad paper from 2020 that showed over the period of 2012 to 2019, there's a 44 x if algorithmic efficiency improvement in the time that it took to train image net to a certain level of accuracy, right? So this is huge. And I think if you, I don't know if you could see the abstract here. This is faster than Morris Law, right? So algorithms do matter. If you didn't have this efficiency, you would be paying 44 times more cost. This is for image models, but there's some results for language as well. Okay, so with all that, I think the right framing or mindset to have is what is the best model one can build given a certain compute and data budget. Okay, and this question makes sense no matter what scale you're at, because you're sort of like, it's accuracy per resources. And of course, if you can raise the capital and get more resources, you'll get better models. But as researchers, our goal is to improve the efficiency of the algorithms. Okay, so maximize efficiency. We're gonna hear a lot of that.
+
+说话人 1 12:12 
+Okay, so now let me talk a little bit about the current landscape and a little bit of, I guess, you know, obligatory history. So language models have been around for a while now, going back to Shannon, you know, who looked at language models, a way to estimate the entropy of English. I think in AI, they really were prominent in NLP, where they were a component of larger systems like machine translation, speech recognition. And one thing that's maybe not as appreciated these days is that if you look back in 2007, Google was training very large and gram models. So 5 gram models over 2 trillion tokens, which is a lot more tokens than GPT three. And it was only risks, I guess, in the last two years that we've gotten to that I'm token count. But they were Ngram models, so they didn't really exhibit any of the interesting phenomena that we know of language models today.
+
+说话人 1 13:15 
+Okay, so in the 20, I think a lot of the, you can think about this, a lot of the deep learning revolution happen and a lot of the ingredients sort of kind of falling into place, right? So there is a first neural language model from Joshua Penjo's group. And that can 2003, there was seek to seek models. This, I think was a, you know, big deal for, you know, how do you basically model sequences? I'm from Ilia and Google folks. There's an atom optimizer, which still is used by the majority of people dating over a decade ago. There's a tension mechanism which was developed in the context of machine translation, which then led up to the famous attention. Also you need or the aka the transformer paper in 2017. People were looking at how to scale mixture of experts. There was a lot of work around late 20 on how to essentially do model parallelism. And they were actually figuring out how you could train, you know, 100 billion parameter models. They didn't train it for very long because these are, these were like more system work, but the all the ingredients were kind of in place before in sort in, by the time the 2020 came around. So I think one, you know, other trend, which was starting NLP was the idea of, you know, these foundation models that could be train a lot of text and adapted to a wide range of downstream tasks. So Elmo, Bird, you know, T5, these were models that were. For their time. Very exciting. We kind of maybe forget how excited people were about, you know, things like bird, but is a big deal.
+
+说话人 1 15:08 
+And then I think I'll, I mean, this is abbreviated history, but I think one critical piece of the puzzle is, you know, OpenAI, this taking these ingredients, you know, they end up applying very nice engineering and really kind of pushing on the kind of the scaling laws, embracing it. As you know, this is the kind of the mindset piece and that led to GPT two and GPT three. Google, you know, obviously was in the game and trying to, you know, compete as well. But that sort of paved the way, I think, to another kind of line of work, which is these were all close models, so models that weren't released and you can only access via API. But they were, although open models starting with, you know, early work by, you know, a Luther right after GP three came out. Meta's early attempt, which didn't work maybe as quite as well. Bloom and then Meta, Alibaba Deep Seek, AI two, and there's a few others which I'm listed have been creating these open models where that the weights are released.
+
+说话人 1 16:24 
+One other piece of, I think, tidbit about openness, I think is important is that there's many levels of openness. There's closed models like GPT four. There's open weight models where the weights are available. And there's actually a paper, a very nice paper with lots of architectural details, but no details about the data set. And then there's open source models where all the weights and data are available in the paper that where they're honestly trying to explain as much as they can, you know, but of course you can't really capture everything, you know, in a paper. And there's no substitute for learning how to build except for kind of doing yourself.
+
+说话人 1 17:06 
+Okay, so that leads to kind of the present day where there's a whole host of, you know, frontier models from OpenAI, Anthropic Xi, Google, Meta, Deep Seek, Alibaba, Tencent, and probably a few others that or sort of dominate the current, you know, landscape. So we're kind of interest this interesting time where, you know, just to kind of reflect a lot of the ingredients, like I said, were developed, which is good because I think we're gonna revisit some of those ingredients and trace how they these techniques work.
+
+说话人 1 17:42 
+And then we're going to try to move as close as we can to best practices on frontier models. But you're using information from essentially the open, you know, community and reading between the lines from what we know about the closed models. Okay, so just as an interlude, s, so what are you looking at here? So this is a executable lecture. So it's a program where I'm stepping through and it delivers the content of lecture.
+
+说话人 1 18:19 
+So one thing that I think is interesting here is that you can embed code. So if you can just step through code, and I think this is a smaller screen I'm used to, but you can look at the environment variables as you're stepping through code. So that's useful later when we start actually trying to drill down and giving code examples. You can see the hierarchical structure of lecture. Like we're in this module and you can see where it's, it was called for main and you can jump to definitions like supervised fine tuning, which we'll talk about later.
+
+说话人 1 18:56 
+Okay. And if you think this looks like a Python program, well, it is a Python program, but I've made it, you processed it so for your viewing pleasure. Okay, so let's move on to the course logistics now. Actually, maybe I'll pause for questions. Any questions about, you know, what we're learning in this class?
+
+说话人 2 19:34 
+In this class, to be able to lead a team to build a frontier model, other skills. So the.
+
+说话人 1 19:41 
+Question is, would I expect a graduate from this class to be able to lead a team and build a frontier model, of course, with, you know, like $1 billion of capital. Yeah, of course I would say that it's a good step. But I, there's definitely many pieces that are missing. And I think, you know, we thought about we should really teach like a series of classes that eventually leads up to as close as we can get. But I think this is maybe the first step of the puzzle, but there are a lot of things and happy to talk offline about that. But I like the ambition. Yeah, that's what you should be doing, taking in the class so you can go lead teams and build frontier models.
+
+说话人 1 20:23 
+Okay. Okay, let's talk a little bit about the course. So here's a website. Everything's online. This is a 5 unit class. But I think that maybe doesn't express the level here as well as this quote that I pulled out from a course evaluation. The entire assignment was approximately the same amount of work as all five assignments from the CSU, 24 n plus the final project. And that's the first homework assignment. So not to all scare you off, but just giving some data here.
+
+说话人 1 21:01 
+So why should you endure that? Why should you do it? I think you, this class is really for people who have sort of this obsessive need to understand how things work all the way down to the atoms, so to speak. And I think if you, you know, when you get through this class, I think you will have really leveled up in terms of your research engineering and the comfort, level of comfort that you'll having building ML systems at scale would just be, I think, you know, something, there's also a bunch of reasons that you shouldn't take the class.
+
+说话人 1 21:35 
+For example, if you want to get any research done this quarter, maybe this class isn't for you. If you're interested in learning just about the hottest new techniques, there are many other classes that can probably deliver on that you know better than, for example, you spending a lot of time debugging BPE. And this is really, I think, about a class about, you know, the primitives and learning things bottom up as opposed to the kind of the latest.
+
+说话人 1 22:06 
+And also if you're interested in building language models or, you know, 4 x, this is probably not the first class I you would take. I think practically speaking, you know, as much as I kind of made a fun of, prompting is great, fine tuning is great. If you can do that and it works, then I think that is something you should absolutely start with. So I don't want people taking this class and thinking that, great, any problem? The first step is to train a language model from scratch. That is not the right way of thinking about it.
+
+说话人 1 22:44 
+Okay, and I know that many of you, you know, some of you were enrolled, but we didn't, we did have a cap, so we weren't able to enroll everyone. And also for the people online, you can follow up at home. All the lecture materials, assignments are online, so you can look at them. The lectures are also recorded and will be put on YouTube, although there will be some number of week lag there. And also we'll offer this class next year. So if you were not able to take it this year, don't fret, they will be next time.
+
+说话人 1 23:21 
+Okay, so the class has five assignments and each of the assignments we don't provide scaffolding code in the sense that the you literally give you a blank file and you're supposed to, you know, build things up. And in the spirit of learning, building from scratch.
+
+说话人 1 23:44 
+But we're not that mean. We do provide unit tests and some adapter interfaces that allow you to check correctness of different pieces and also the assignment write up, if you walk through it does do it for sort of a gentle job of doing that, but you're kind of on your own for making good software design decisions and figuring out what you name your functions and how to, you know, organize your code, which is a useful skill, I think.
+
+说话人 1 24:13 
+So one strategy, I think for all assignments is that there is a piece of assignment which is just implement the thing and make sure it's correct. That mostly you can do locally on your laptop. You should need compute for that. And then you should, we have a cluster that you can run for benchmarking both accuracy and speed, right? So I want everyone to kind of embrace this idea of that you want to use as a small dataset or as few resources possible to, you know, prototype before running large jobs. You shouldn't be debugging with 1 billion parameter models on the cluster if you can help it. Okay, there's some assignments which will have a leaderboard which. Usually is of the form, do things to make perplexity go down, given a particular training budget.
+
+说话人 1 25:06 
+Last year, it was, I think, pretty, you know, exciting for people to try to, you know, try different things that you either learn from the class or you read online. And then finally, I guess this year is, you know, this was less of a problem last year because I guess co pilot wasn't as good, but you know, curse is pretty good. So I think our general strategy is that, you know, AI tools are, you know, can take away from learning because there are cases where it can just solve the thing you want it to do. But, you know, I think you can obviously use them judiciously. So, but use at your own risk. You're kind of responsible for your own learning experience here. Okay, so we do have a cluster. So thank you together AI for providing a bunch of H1 hundreds for us. There's a guide to please read it carefully to learn how to use a cluster and start your assignments early because the cluster will fill up towards the end of the deadline as everyone's trying to get their large runs in. Okay, any questions about that.
+
+说话人 2 26:21 
+Five year costs were we are able to sign up for it for like three event requirement.
+
+说话人 1 26:27 
+Right? So the question is, can you sign up for less than 5 units?
+
+说话人 1 26:30 
+I think administratively, if you have to sign up for less, that is possible, but it's the same class in the same workload. Any other questions? Okay, so in this part, I'm gonna go through all the different components of the course and just give a broad overview, a preview of what you're gonna experience. So remember, it's all about efficiency. Given hardware and data, how do you train the best model given your resources?
+
+说话人 1 27:06 
+So for example, if I give you a common crawl dump, a web dump, and 32 h one hundreds for two weeks, what should you do? There are a lot of different design decisions. There's, you know, questions about the tokenizer, the architecture, systems, optimizations you can do, data things you can do. And we've organized the class into these five units or pillars. So I'm gonna go through each of them, you know, intern and talk about what we'll cover, what the assignment will involve.
+
+说话人 1 27:41 
+And then I'll kind of wrap up. Okay, so the goal of the basics unit is just get a basic version of a full pipeline working. So here you implement a tokenizer, model architecture and training. So I'll just say a bit more about what these components are. So a tokenizer is something that converts between strings and sequences of integers. Intuitively, you can think about the integers corresponding to breaking up the string into segments and mapping each segment to an integer.
+
+说话人 1 28:15 
+And the idea is that you just, your sequence of integers is what goes into the actual model, which has to be like a fixed dimension. Okay, so in this course, we'll talk about the bypair encoding, BPE tokenizer, which is relatively simple and still is used. There are, I guess, a promising set of methods on tokenizer free approaches. So these are methods that just start with the raw bites and don't do tokenization and develop a particular architecture that just takes the raw bites. This work is promising, but you know, so far I haven't seen it been scaled to the frontier yet.
+
+说话人 1 29:03 
+So we're go with BP for now. Okay, so once you've tokenized your sequence or strings into a sequence of integers, now we define a model architecture over these sequences. So the starting point here is original transformer. That's what is the backbone of basically all your frontier models. And here's our architectural diagram.
+
+说话人 1 29:31 
+We won't go into the details here, but there's attention, you know, piece and then there's a MLP, you know, layer with some, you know, normalization. So a lot has actually happened till since 2,017, right? I think there's a sort of sense to which, oh, the transformer is embedded. And then, you know, everyone's just using transformer and to first approximation, that's true. We're still using the same recipe, but there have been a bunch of. The smaller improvements that do make a substantial difference when you add them all up.
+
+说话人 1 30:05 
+So for example, there is the activation, you know, non linear activation function. So swigly, which we saw a little bit before. Positional embeddings, there's new positional embeddings, these rotary positional embeddings, which will talk about normalization, you know, instead of using a layer norm, we're gonna look at something called RMS norm, which is similar but simpler. There's a question where you place the normalization, which has been changed from the original transformer, the MLP use the canonical version as a dense MLP, and you can replace that with mixture of experts.
+
+说话人 1 30:44 
+Attention is something that has actually been gaining a lot of attention. I guess there's full attention and then there's, you know, sliding window attention and linear attention. All of these are trying to prevent a quadratic blowup.
+
+说话人 1 31:00 
+There's also lower dimensional versions like, you know, GQA and MLA, which will get you in a second, or not in a second, but in a future lecture. And then, you know, the most kind of maybe radical thing is other alternatives to the transformer, like space based models like hyena, where they're not doing, you know, attention, but you know, some other sort of operation. And sometimes you get best for towards by, you know, mixing, making a hybrid model that mixes these in with transformers. Okay, so once you define your architecture, you need a train. So there's a, you know, design decisions include optimizer.
+
+说话人 1 31:43 
+So Adam w, which is a variant, basically Adam fixed up, is still very prominent. So we'll mostly work with that. But it is worth mentioning that there is more recent optimizers like Mulan and soap that have shown promise learning rate, schedule, you know, batch size, you know, whether you do regularization or not, hyper parameters, there's a lot of details here. And I think this class is one where the details do matter because you can easily have, you know, order of magnitude difference between a well tuned, you know, architecture and something that's just like a vanilla transformer. So in Assignment 1, basically you'll implement the BP tokenizer. I'll warn you that this is actually the part that seems to have been a lot of surprising, maybe a lot of work for people.
+
+说话人 1 32:40 
+So just, you know, your warned and you also implement a transformer cross MP trip P loss, MW optimizer and training loop. So again, the whole stack and you know, we're not making you implement, you know, pi torch from scratch. So you can use Pi Torch, but you can't use like, you know, the transformer implementation for Pytorch. There's a small list of functions that you can use and you can only use those. Okay, so we're gonna have some, you know, tiny stories and open web text datasets that you'll train on. And then there will be a leaderboard to minimize the open web text perplexity.
+
+说话人 1 33:22 
+We'll give you 90 minutes on a H100 and see what you can do. So this is last year. So see we have the top. So this is the number to beat for this year. Okay. Alright, so that's the basics.
+
+说话人 1 33:39 
+Now, after basics, I mean, in some sense you're done, right? Like you have ability to train a transformer. What? Well, still need. So the system part really, who goes into how you can optimize this further. So how do you get the most out of hardware? And for this, we need to take a closer look at the hardware and how we can, you know, leverage it.
+
+说话人 1 34:05 
+So there's kernels, parallelism and inference are the three components of this unit. So, okay, so to first talk about kernels, let's talk a little bit about what a GPU looks like. Okay, so a GPU, which will get much more into, is basically a huge array of these, you know, a little units that do floating point operations and maybe the one thing to note is that this is the GPU chip and here is the memory that's actually off chip. And then there's some other memory like L2 caches and L1 caches on chip. And so the basic idea is that compute has to happen here.
+
+说话人 1 34:55 
+Your data might be somewhere else. And how do you basically organize? As your compute so that you can be most efficient. So one quick analogy is imagine that your memory is where you can store like your data and model parameters is like a warehouse and your computer is like the factory and what you what ends up being a big bottleneck is just data movement cost, right? So the thing that we have to do is how do you organize the compute, like even a matrix multiplication to maximize the utilization of the GPUs by minimizing the data movement. And there's a bunch of techniques like fusion and tiling that allow you to do that.
+
+说话人 1 35:48 
+So we'll get all into the details of that and to implement and leverage it, a kernel, we're gonna look at Triton. There's other things you can do with various levels of sophistication, but we're gonna use Triton, which is developed by OpenAI in a popular way to build kernels. Okay, so we're gonna write some kernels that's for one GPU. So now in general, you have these big runs, take, you know, tens, thousands, if not tens of thousands of GPUs. And, but even at 8, it kind of starts becoming interesting because you have a lot of GPUs. They're connected to some CPU nodes and they also have are directly connected via MNV switch and we link and the it's the same idea right now.
+
+说话人 1 36:38 
+The only thing is that data movement between GPUs is even slower, right? And so we need to figure out how to put model, you know, parameters and activations and gradients and put them on the GPUs and do the computation and to minimize amount of your movement. And then so we're gonna explore different type of techniques like data parallelism and, you know, tensor parallelism and so on. So that's all I'll say about that. And finally, inference is something that we didn't actually do last year in the class, although we had a guest lecture. But this is important because the inference is how you actually use a model, right?
+
+说话人 1 37:27 
+It's basically the task of generating tokens given a prompt, given a train model. And it also turns out to be really useful for a bunch of other things besides just chatting with your favorite model. You need it for reinforcement learning, test time compute, which has been, you know, very popular lately. And even evaluating models, you need to do inference. So we're gonna spend some time talking about inference.
+
+说话人 1 37:55 
+Actually, if you think about the globally, the cost that static that's spent on inference is going, it's, you know, eclipsing the cost that it is used to train models. Because training, despite it being very intensive, is ultimately a one time cost. And inference is cost scales with every use. And the more people use your model, the more you need inference to be efficient. Okay, so in inference, there's two phases.
+
+说话人 1 38:29 
+There's a prefill and a decode. Prefill is you take the prompt and you can run it through the model and get some, you know, activations and then decode is you go auto aggressively one by one and generate tokens. So prefill all the tokens are given so you can process everything at 1. So this is exactly what you see at training time.
+
+说话人 1 38:50 
+And generally this is a good setting to BN because you can parallel, it's naturally parallel and you're mostly compute bound. What makes inference, I think, special and difficult is that this auto regressive decoding, you need to generate one token at a time and ends you, it's hard to actually saturate all your GPUs and it becomes, you know, memory bound because you're constantly, you know, moving data around. And we'll talk about a few ways to speed the models up, this speed inference up. You can use a cheaper model. You can use this really cool technique called speculative decoding, where you use a cheaper model to sort of scout ahead and generate multiple tokens.
+
+说话人 1 39:30 
+And then if these tokens happen to be good by some for 7 definition good, you can have the full model just, you know, score in and accept them all in parallel. And then there's a bunch of systems optimizations that you can do as well. Okay, so after the systems, oh, okay. Assignment 2. So you're gonna implement a kernel, you're gonna implement some parallelism. So data.
+
+说话人 1 40:00 
+Parallel is very natural, and so we'll do that. Some of the model parallelism like FSDP turns out to be a bit kind of complicated do from scratch. So we'll do sort of a baby version of that. But you know, I encourage you to learn and you know about the full version. We'll go over the full version in class, but implementing from scratch might be a bit no, too much. And then I think an important thing is getting in the habit of always benchmarking profile.
+
+说话人 1 40:34 
+I think that's actually probably the most important thing is that you can implement things, but unless you have a feedback on how well your implementation is going and where the bottlenecks are, you're just gonna be kind of fine blind. Okay, so unit 3 is a scaling loss. And here the goal is you want to do experiments at small scale and figure things out and then predict the hyper parameters and loss at large scale. So here's a fundamental question. So if I give you a flops budget, you know, what model size should you use?
+
+说话人 1 41:17 
+If you use a larger model, that means you can train on less data. And if you use a smaller model, you can train on more data. So what's the right balance here? And this has been quite studied quite extensively and figured out by a series of paper from open air and deep mine. So if you hear the term Chinchilla optimal, this is what this is referring to.
+
+说话人 1 41:37 
+And the basic idea is that for every compute budget number of flops, you can vary the number of parameters of your model. Okay, and that, and then you measure how good that model is. So for every level of compute, you can get the optimal your parameter count. And then what you do is you can fit a curve to extrapolate and see if you had, let's say, you know, one E22 flops, you know, what would it be the parameter size? And it turns out these minimum, when you plot them, it's actually remarkably, you know, linear, which leads to this like very actually simple but useful rule of thumb, which is that if you have a particular model of size N, if you multiply by 20, that's the number of tokens you should train on, essentially.
+
+说话人 1 42:37 
+So that means if I say, you know, 1.4 billion parameter model should be trained on 28 billion, you know, tokens. Okay, but you know, this doesn't take into account inference cost.
+
+说话人 1 42:48 
+This is literally how can you train the best model regardless of how big that model is. So there's some limitations here, but it's nonetheless been extremely useful for model development. So in this assignment, this is kind of, you know, fun because we define a quote and quote training API, which you can query with a particular set of hyper parameters. You specify the architecture, you know, and batch size and so on. And we return you a loss that your decisions will get you.
+
+说话人 1 43:21 
+Okay, so your job is you have a flops budget and you're gonna try to figure out how to train a bunch of models. And then you gather the data, you're gonna fit a scanning law to the gather data, and then you're going to submit your prediction on, you know, what you would choose to be the hyper parameters, what model size and so on at a larger scale. Okay, so this is a case where you have to be really, we want to put you in this position where there's some stakes. I mean, this is not like burning real compute, but you know, once you run out of your flops widget, that's it. So you have to be very careful in terms of how you prioritize what experiments to run, which is something that the frontier lives have to do all the time.
+
+说话人 1 44:10 
+And there will be a leaderboard for this, which is minimize flops, minimize loss, given your flops. Budget question.
+
+说话人 2 44:22 
+2024. Yeah, so if we're working ahead, should we expect assignments change over time or are these gonna be the finals?
+
+说话人 1 44:31 
+So the question is that these links are from 2024, the rough assignments, the rough structure will be the same from 2025. There will be some modifications, but if you look at these, you should have a pretty good idea of what to expect.
+
+说话人 1 44:49 
+Okay, so let's go into data now. Okay, so up until now, you've done, you have scaling laws, you have systems, you can, you have your. Transformer implementation, everything, you're really kind of good to go. But data, I would say, is a really kind of key ingredient that I think differentiates in some sense. And the question to ask here is, what do I want this model to do, right?
+
+说话人 1 45:17 
+Because it's what I, what the model does is completely determine, I mean, mostly determined by the data. If I put, if I train on multilingual data, it will have multilingual capabilities. I train on code, you'll have code capabilities and not, you know, it's very natural. And usually datasets are a conglomeration of a lot of different pieces. There's, you know, this is from a pile which is, you know, 4 years ago, but the same ID, I think holds, you know, you have data from, you know, the web.
+
+说话人 1 45:46 
+This is common crawl. You have, you know, Stack Exchange, Wikipedia, Github, and different, you know, sources which are curated. And so in the data section, we're gonna start talking about evaluation, which is given a model, how do you evaluate whether it's any good? So we're gonna talk about perplexity where measures, standard, kind of standardized testing like mmlu, if you have models that generate utterances for instruction following, how do you evaluate that? There's no so decisions about if you can ensemble or do chain of Ada test time, you know, how does that affect your evaluation?
+
+说话人 1 46:28 
+And then, you know, you can talk about entire systems, evaluation of entire system, not just a language model, because language models often get these days plugged into some agentic system or something. Okay, so now after establishing evaluation, let's look at data curation. So this is, I think, an important point that people don't realize. I often hear people say, oh, we're training the model on the internet. This just doesn't make sense, right?
+
+说话人 1 47:02 
+Data doesn't just, you know, you know, fall from the sky and there's the internet that you can, you know, pipe into your model. You know, data has to always be actively acquired somehow. So even if you, you know, just as an example of, you know, I always tell people, look at the data. And so let's look at some data. So this is some common crawl, you know, data.
+
+说话人 1 47:32 
+I'm gonna takes 10 documents. And I think hopefully this works okay. I think the rendering is off, but you can kind of see this is a sort of random sample of common crawl.
+
+说话人 1 47:51 
+And you can see that this is maybe not exactly the data. Oh, here's some actually real text here. Okay, that's cool. But if you look at most of common crawl, aside from this is a different language, but you can also see this is very spammy sites. And you'll quickly realize that a lot of the web is just, you know, trash.
+
+说话人 1 48:15 
+And so, well, okay, maybe that's not, that's surprising, but it's more trash than you would actually expect, I promise. So what I'm saying is that there's a lot of work that needs to happen in data. So you crawl the internet, you can take books, archives of papers, Github, and there's actually a lot of processing that needs to happen. You know, there's also legal questions about what data you can, you know, train on, which we'll touch on. Nowadays, a lot of frontier models have to actually buy data because the data on the internet that's publicly accessible is actually turns out to be, you know, a bit limited for that kind of the, you know, the really frontier performance.
+
+说话人 1 49:03 
+And also, I think it's important to remember that this data that's scrape, it's not actually text, right? First of all, it's HTML or Pdfs or in the case of code is just directories. So there has to be an explicit process that takes this data and turns it into text. Okay, so we're gonna talk about the transformation from HTML to text. And he this is gonna be a lossy process.
+
+说话人 1 49:31 
+So the trick is how can you preserve the content and some of the structure without, you know, basically just having an HTML filtering as you could, you know, surmise is going to be very important both for getting high quality data, but also removing harmful content. Generally, people train classifiers to do this. Deduplication is also an important step, which we'll talk about. Okay, so Assignment 4 is all about data. We're going to give you the raw common crawl, you know, dump so you can see just how bad it is. And you're gonna train classifiers, dedupe, and then there's gonna be a leaderboard where you're gonna try to minimize perplexity given your token budget.
+
+说话人 1 50:21 
+So now let's now you have the data, you've done this, built all your fancy kernels, you've trained, now you can really train models. But at this point, what you'll get is a model that can complete the next token, right? And this is called a essentially base model. And I think about it as a model has a lot of raw potential, but it needs to be aligned or modified some way. And alignment is a process of making it useful. So in the alignment captures a lot of different things, but three things I think it captures is that you want to get the language model to follow instructions, right?
+
+说话人 1 51:02 
+Completing the next token is not necessarily following the instruction. It'll just complete the instruction or whatever it thinks will follow the instruction.
+
+说话人 1 51:11 
+You get to here, specify the style of the generation, whether you want to be a long or short, whether you want bullets, whether you know, you want it to be witty or have sass or not. And you when you play with, you know, you know, chat GBT versus rock, you'll see that there's different alignment that has happened. And then also safety. One important thing is for these models to be able to refuse answers that can be, you know, harmful. So that's where alignment also kicks in.
+
+说话人 1 51:43 
+So there's generally two phases of alignment. They're supervised, fine tuning. And here the goal is, I mean, it's very simple.
+
+说话人 1 51:53 
+You basically gather a set of user assistant pairs, so prompt response pairs, and then you do supervise learning. Okay, and the idea here is that the base model already has the sort of the raw potential. So just fine tuning it on a few examples is sufficient. Of course, the more examples you have, the better the results. But there's papers like this one that shows even like a thousand examples suffices to give you instruction following capabilities from a base, good base model.
+
+说话人 1 52:31 
+Okay, so this part is actually very, you know, simple and it's not that different from, you know, pre training because it's just you're given text and you just maximize the probability of the text. So the second part is a bit more interesting from an algorithmic perspective. So the idea here is that even with SFT phase, you will have a decent model. And now how do you improve it? Well, you can get there more SFP data, but that can be very expensive because you have to, you know, have someone sit down and annotate data.
+
+说话人 1 53:04 
+So there, the goal of learning from feedback is that you can leverage lighter forms and annotation and have the algorithms do a bit more work. Okay, so one type of data you can learn from is preference data. So this is where you generate multiple responses from a model to a given prompt like AOB, and the user rates whether a or B is better. And so the data might look like, you know, it generates, you know, what's the best way to train a language model, use a large dataset or use a small dataset. And of course, the answer should be a.
+
+说话人 1 53:41 
+So that is a unit of expressing preferences. Another type of supervision you could have is using verifiers. So for some domains, you're lucky enough to have a formal verifier, like for math or code, or you can use learn verifiers where you train a actual language model to rate the response. And of course, this relates to evaluation. Again, algorithms.
+
+说话人 1 54:12 
+This is, you know, we're in the realm of reinforcement learning. So one of the earliest algorithms that was developed that was applied to instruction tuning models were, was PPO, Proximal Policy Optimization. It turns out that if you just have preference data, you there's a much simpler algorithm called DPO that works really well. But in general, if you wanted to learn from verifiers data, you have to, it's not preference data. So you have to embrace RL fully.
+
+说话人 1 54:45 
+And you know, there's this method which will do in this class, which called group relative preference optimization, which simplifies PPO and makes it more efficient by removing the value function throw by deep sink. Which seems to work pretty well. Okay, so when Simon 5 implements supervise tuning DPO and GRPO, and of course evaluate. Question.
+
+说话人 2 55:15 
+Really I quote from the horizontal issue about assignment 1,50 bucks and marketplace 2 high or yeah, the.
+
+说话人 1 55:23 
+Question is, as Simon one seems a bit daunting. What about the other ones? I would say that assignment 1 and 2 are definitely the most heavy and hardest. Assignment 3 is a little bit more of a reader. And Assignment 4 and 5, at least last year, were, I would say, a notch, although I don't know, depends on, we haven't fully worked out the details.
+
+说话人 2 55:51 
+For this year.
+
+说话人 1 55:55 
+Yeah, does get better. Okay, so just to a recap of the different pieces here, you know, remember efficiency is this driving principle and there's a bunch of different design decisions. And you can s, I think if you view efficiency, everything through lens of efficiency, I think a lot of things kind of make sense. And importantly, I think, you know, we're, I, it's worth pointing out there, we are currently in this compute constraint regime, at least this class and most people who are somewhat GPU poor. So we have a lot of data, but we don't have that much compute. And so these design decisions will reflect squeezing the most out of the hardware. So for example, data processing, we're filtering fairly aggressively because we don't want to waste precious compute on better relevant data tokenization. Like it's nice to have a model over bytes that's very elegant, but it's very compute inefficient with today's model architectures. So we have to do tokenization to as an efficiency gain model architecture. There are a lot of the design decisions there that are essentially motivated by, you know, efficiency training. I think the fact that we're, most of what we're doing to do is just a single epoch. This is clearly we're in a hurry. We just need to see more data as opposed to spend a lot of time on, in a given data point. Scan laws is completely about efficiency. We use less compute to figure out the hyper parameters. And a alignment is maybe a little bit different, but the connection to efficiency is that if you can put resources into alignment, then you actually require less, you know, smaller base models. Okay, so there is a, you know, there's sort of two paths. If your use case is fairly narrow, you can probably use a smaller model. You align it or fine tune it, and you can do well. But if your use cases are very broad, then there might not be a substitute for training a big model. So that's today.
+
+说话人 1 58:09 
+So increasingly now, at least for Frontier Labs, they're becoming data constrained, which is interesting because I think that the designs decisions will presumably completely change. Well, I mean, compute will always be important, but I think the design decisions will change. For example, you know, she learning, taking one epoch of your data, I think doesn't really make sense. If you have more compute, why wouldn't you take more epochs at least or do something smarter? Or maybe there will be different architectures, for example, because a transformer was really motivated by, you know, compute efficiency. So that's something to kind of ponder still. It's about efficiency, but the design decisions reflect what regime you're in. Okay, so now I'm going to dive into the first unit. Yeah, before that, any questions?
+
+说话人 2 59:15 
+Do you have a spot or head?
+
+说话人 1 59:18 
+The question is, we have a Slack or s? We will have a slack. We'll send out details after this class.
+
+说话人 2 59:26 
+Well, students auditing the course holds up access to the same material.
+
+说话人 1 59:30 
+The question is, students auditing the class will have access to all the online s, you know, materials, assignments, and will give you access to canvas so you can watch the lecture videos. Yeah, what's the grading of the assignments? Good question. So there will be a set of unit tests that you will have. Have to pass. So part of the grading is just, did you implement this correctly? There will be also parts of the grade which will, did you implement a model that achieved a certain level of loss or is efficient enough in the assignment. Every problem part has a number of points associated with it, and so that gives you a fairly granular level of what grading looks like.
+
+说话人 1 01:00:28 
+Okay, let's jump into tokenization. Okay, so Andre Kapati has this really nice video on tokenization. And in general, he makes a lot of these videos on that actually inspire a lot of this class, how you can build things from scratch. So you should go check out some of his videos. So tokenization, as we talked about, it is the process of taking raw text, which is generally represented as Unicode strings, and turning it into a set of integers essentially, and where each integer is represents a token. Okay, so we need a procedure that encode strings, the tokens and decodes them back into strings. And the vocabulary size is just the number of values at a token TikTok, the number of the range of the integers.
+
+说话人 1 01:01:24 
+Okay, so just to give you an example of how tokenizers work, let's play around with this really nice website, which allows you to look at different tokenizers and just type in something like, you know, hello, you know, hello or whatever. Maybe other do this. And one thing it does is it shows you the list of integers. This is the output of tokenizer. It also nicely maps out the decomposition of the original string into a bunch of segments and a few things to kind of note. First of all, the space is part of a token. So unlike classical NLP where the space just kind of disappears, everything is accounted for, these are meant to be kind of reversible operations, tokenization. And by convention, it, you know, for whatever reason, the space is usually proceeding the token.
+
+说话人 1 01:02:28 
+Also notice that, you know, hello is a completely different token than space hello, which you might make you a little bit squeamish. But, you know, it seems and it can cause problems, but that's just how it is. Question instead of trailing intentional or is it just an artifact of the BPE.
+
+说话人 2 01:02:50 
+Process?
+
+说话人 1 01:02:51 
+So the question is the spacing before intentional or not? So in the BP process, I will talk about you actually pre tokenize and then you tokenize each part. And I think the pre tokenizer does put the space in the front. So it is built into the algorithm. You could put it at the end, but I think it's probably makes more sense to put in the beginning. But actually don't.
+
+说话人 1 01:03:24 
+Well, it could, I guess it could go either way. It's my sense. Okay. So then if you look at numbers, you see that the numbers are chopped down into different, you know, pieces. It's a little bit kind of interesting that it's left to right. So it's definitely not grouping by thousands or anything like semantic. But anyway, I encourage you to kind of play with it and get a sense of what these existing tokenizers look like.
+
+说话人 1 01:03:54 
+So this is a tokenizer for GP four o, for example. So there are some observations that we made. So if you look at the GBT2 tokenizer, which will use this kind of as a reference. Okay, let me see if I can. Okay, hopefully this is, let me know if this is too, getting too small in the back.
+
+说话人 1 01:04:19 
+You can take a string. If you apply the GPD2 tokenizer, you get your indices. So a maps strings, the indices, and then you can decode to get back the string. And this is just a sanity check to make sure that you actually with round trips.
+
+说话人 1 01:04:40 
+Another thing that's, I guess, interesting to look at is this compression ratio, which is if you look at the number of bytes divided by the number of tokens, so how many bytes are represented by a token? And the answer here is 1.6. Okay, so every token represents 1.6 bytes. Of data. Okay, so that's just a GPT tokenizer that opening a trend to motivate kind of BPE. I wanna go through a sequence of attempt.
+
+说话人 1 01:05:11 
+So I suppose you wanted to do tokenization. What would be the sort of the the simplest thing is probably character based tokenization. A Unicode string is a sequence of Unicode characters and each character can be converted into an integer and called a code point. Okay, so a maps to 97. The world emoji maps to 127,757 and you can see that it converts back.
+
+说话人 1 01:05:39 
+Okay, so you can define a tokenizer, which simply your maps each character into a code point. Okay, so what's one problem with us? Yeah, frustration. The compression ratio is 1. So that's, well, actually the compression ratio is not quite one because a character is not a bite, but it's maybe not as good as you want. One problem with that, if you look at some code points, they're actually really large, right?
+
+说话人 1 01:06:19 
+So you're basically allocating each like one slot in your vocabulary for every character uniformly. And some characters appear way more frequently than others. So this is not a very effective use of your kind of budget. Okay, so the vocabulary size is, you're huge. I mean, the vocabulary size being 127 is actually a big deal. But the bigger problem is that some characters are rare and this is inefficient use of a vocab. Okay, so the compression ratio is 1.5 in this case because it's the tokens, sorry, the number of bytes per token and a character can be multiple bytes.
+
+说话人 1 01:07:09 
+Okay, so that was a very kind of naive approach. On the other hand, you can do bytebased tokenization. Okay, so unicode strings can be represented sequence of bytes because every string can just be, you know, convert into bytes. Okay, so some, you know, a is already just kind of one byte, but some characters take up as many as four bytes. And this is using the UTF8 kind of encoding of Unicode. There's other encodings, but this is the most common one that's super dynamic.
+
+说话人 1 01:07:49 
+So let's just convert everything into bytes and see what happens. So if you do it into bytes, now all the indices are between 0 and 256 because there are only 256 possible values for a byte by definition. So your vocabulary is very, you know, small and each byte is, I guess, not all bytes are equally used, but, you know, it's not too, you don't have that many sparsity, you know, problems. But what's the problem with Bybase encoding about sequences? Yeah, long sequences.
+
+说话人 1 01:08:27 
+So this is, I mean, in some ways I really wish by coding would work. It's the most elegant thing. But you have long sequences, your compression ratio is 1 byte per token. And this is just terrible of compression ratio of 1 is terrible because your sequences will be really long. Attention is quadratic naively in the sequence lane.
+
+说话人 1 01:08:50 
+So this is, you're just gonna have a bad time in terms of efficiency. Okay, so that wasn't really good. So now the thing that you might think about is, well, maybe we kind of have to be adaptive here, right? Like, you know, we can't allocate a character or a byte per token, but maybe some tokens can represent lots of bytes and some tokens can represent few bytes. So one way to do this is word based synchronization. And this is something that was actually very classic and in NLP, right?
+
+说话人 1 01:09:24 
+So here's a string and you can just, you know, split it into a sequence of segments, okay? And you can call each of these tokens. So you just use a regular expression. Here's a different regular expression that GPT two uses to pre tokenize. And it just splits your string into a sequence of strings.
+
+说话人 1 01:09:53 
+So and then what you do with each segment is you assign each of these to an integer and then you're done. Okay, so what's the problem with this? Okay, yeah, so the problem is that your vocabulary size is sort of unbounded. Well, none, maybe not quite unbounded, but you don't know how big it is, right?
+
+说话人 1 01:10:18 
+Because on a given new input, you might get a segment that's, that just you've never seen before. And that's actually a kind of a big problem. This is actually where base is a really big pain in the butt because, you know, some real words are rare. And, you know, you, you actually, it's really annoying because new words have to receive this UNC token. And if you're not careful about how you compute, you know, the perplexity, then you're just gonna mess up. So, you know, word based isn't, I think it captures the right intuition of adjectivity, but it's not exactly what we want here. So here we're finally gonna talk about the BPE encoding or byte pair encoding. So this was actually a very old algorithm developed by Philip Gauge and 94 for data compression.
+
+说话人 1 01:11:17 
+And it was first introduced into NLP for neural machine translation. So before papers that did machine translation or any, basically all NLP use word based tokenization. And again, we're based with pain. So you know, this paper pioneer this idea. Well, we can use this nice algorithm form 94, and we can just make the tokenization kind of round trip and we don't have to deal with unks or any of that stuff.
+
+说话人 1 01:11:49 
+And then finally, this enters a kind of language modeling era through GPT two, which was trained on using the BP tocalizer. Okay, so the basic idea is instead of defining some sort of preceived notion of how to split up, we're gonna train the tokenizer on raw tax. That's a basic kind of insight, if you will. And so organically, common sequences that spam multiple characters, we're gonna try to represent as one token. And rare sequences are gonna be represented by multiple tokens.
+
+说话人 1 01:12:28 
+There's a sort of a slight detail which is for efficiency, the GPT two paper uses war based tokenizer as a sort of pre processing to break it up into segments and then runs BP on each of the segments, which is what you're gonna do in this class as well. The algorithm BP is actually very simple. So we first convert the string into sequence of bytes, which we already did when we talk about Bybase tokenization.
+
+说话人 1 01:12:53 
+And now we're gonna successively merge the most common pair of adjacent tokens over and over again. So that intuition is that if a pair of tokens just shows up a lot, then we're going to compress it into one token. We're still gonna dedicate space for that. Okay, so let's walk through what this algorithm looks like. So we're gonna use this cat and hat as an example, and we're gonna convert this into a sequence of integers.
+
+说话人 1 01:13:20 
+These are the bytes. And then we're gonna keep track of what we've merged. So remember, merges is a map from two integers, which can represent bytes or other, you know, ex pre existing tokens. And we're gonna create a new token. And the vocab is just gonna kind of be a handy way to represent the index to bytes.
+
+说话人 1 01:13:47 
+Okay, so we're going to the BP algorithm. I mean, it's very simple. So I'm just actually gonna run through the code. You're gonna do this number ges of times. So numbers 3 in this case, we're gonna first count up the number of occurrences of pairs of byte. So hopefully this doesn't become too small.
+
+说话人 1 01:14:06 
+So we're gonna just step through this sequence and we're gonna see that, okay, so once 1,1,6,1,0,4, we're gonna increment that count. 1,0,4,1,0,1, increment that count. We go through the sequence and we're gonna count up, you know, the bytes. Okay, so now after we have these counts, we're going to find the pair that occurs the most number of times. So I guess there's multiple ones, but we're just gonna break ties and say 1,1,6, and 1:04.
+
+说话人 1 01:14:42 
+Okay, so that occur twice. So now we're gonna merge that pair. So we're gonna create a new slot in our vocab, which is going to be 256. So far, it's 0,3,1,2,55. For now, we're expanding the vocab to two 50. 6 and we're gonna say every time we see 1 one 6 and 1 o 4 we're gonna replace it with 256.
+
+说话人 1 01:15:09 
+Okay, and then we're going to just apply that merge to our training set. So after we do that, the 1:16,1:04 became 256. And this 2:56, remember, occurred twice. Okay, so now we're just gonna loop through this algorithm, you know, one more time. The second time it decided to merge two, 56 and one on one.
+
+说话人 1 01:15:39 
+And now I'm going to replace that in indices. And notice that the indices is going to shrink, right, because our compression ratio is getting better as we make a room for more vocabulary items and we have a greater vocabulary to represent everything. Okay, so let me do this one more time. And then the next merge is 2573. And this is shrinking one more time.
+
+说话人 1 01:16:07 
+Okay, and then now we're done. Okay, so let's try out this tokenizer. So we have the string, the quick brown fox. We're gonna encode into a sequence of indices. And then we're gonna use our BP tokenizer to Deco.
+
+说话人 1 01:16:27 
+Let's actually step through what that, you know, looks like this. Well, actually, maybe decoding isn't actually interesting. Sorry. It should have gone through the encode. Let's go back to encode. So in code, you take a string, you convert to indices and you just replay the merges in, and importantly, in the order that occur.
+
+说话人 1 01:16:54 
+So I'm gonna replay these merges and and then I'm going to get my indices. Okay, and then verify that this works. Okay, so that was, it's pretty simple. The, you know, it's because it's simple, it was also very inefficient. For example, encode loops over the merges. You should only loops over the merges that matter. And there's some other bells and whistles, like there's special tokens, pre tokenization.
+
+说话人 1 01:17:28 
+And so in your assignment, you're going to essentially take this as a starting point. And or I mean, I guess you should implement your own from scratch, but your goal is to make the implementation no fast and you can like paralyze it if you want. You can go have fun. Okay, so summary of tokenization. So tokenizer maps between strings and sequences of integers.
+
+说话人 1 01:17:55 
+We looked at character base, byte base, word base. They're highly suboptimal for various reasons. BPE is a very old algorithm from 94 that still proves to be effective heuristic. And the important thing is that looks at your corpus statistics to make sensible decisions about how to best adaptively allocate vocabulary to represent sequences of characters.
+
+说话人 1 01:18:20 
+And, you know, I hope that one day I won't have to give this lecture because we just have architectures that map from bytes. But until then, we'll have to deal with tokenization. Okay, so that's it for today. Next time we're gonna dive into the details of Pytorch and give you the building blocks and pay attention to resource accounting. All of you have presumably implemented, you know, Pytorch programs, but we're going to really look at where all the flops are going. Okay, see you next time.
+

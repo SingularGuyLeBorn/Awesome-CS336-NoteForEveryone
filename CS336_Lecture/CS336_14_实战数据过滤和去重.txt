@@ -1,0 +1,876 @@
+2025年7月14日 下午 10:16|1小时 18分钟 23秒
+
+关键词:
+language models、training models、more hash、language modeling papers、linear models、good model、modeling works、small model、neural language model、better models、best model、huge model、multilingual models、generative models、shelf models、hash value、filter data、same data
+
+文字记录:
+说话人 1 00:00 
+Lecture, I would like to take a deep dive into some of the mechanics on how quality filtering and deduplication work in particular. So first, we're going to look at different algorithms for filtering, which mostly are model based. So you train a classifier, train some sort of model to filter. Then we're gonna show that this primitive can be used for all sorts of different types of filtering. And then finally, we're gonna look at some algorithms for deduplication. So this lecture will be a little bit different in that it's gonna focus a lot on sort of classical big data processing algorithms and there'll be some fun math in there for.
+
+说话人 2 00:37 
+Some of you.
+
+说话人 1 00:39 
+Okay, so let's get started with filtering algorithms. So the basic high level picture here is that you're given some target data and which you don't have very much of it. Suppose it's data that's high quality and you have a lot of raw data. So imagine this is common crawl and your goal is you want to find a subset of that raw data. It's called t prime, which is similar to t. Okay, so this is a pattern that you should kind of recognize in basically any sort of filtering pipeline. And what do you want for this filtering algorithm? You want it obviously to generalize from.
+
+说话人 2 01:21 
+T.
+
+说话人 1 01:23 
+Right? You don't want, you already have t. So, and there's no point in getting exactly the same data t. So there has to be some generalization and also has to be extremely fast. So you have to run it on all of the web, for.
+
+说话人 2 01:35 
+Example.
+
+说话人 1 01:36 
+So if this is running a huge model, that's going to be might be as expensive as training. So you don't definitely don't want that. Otherwise, you might as well.
+
+说话人 2 01:44 
+Train.
+
+说话人 1 01:47 
+So we're going to look at three different ways that you can implement this high level abstract primitive. So we'll start with training and Ngram model. So this is something that came up in the last lecture. So you can train an Ngram model with Kinesis moving. You can use other forms of smoothing, but Kanesar Nai has sort of been inherited from the, you know, you know, Ngram kind of modeling, citizen language processing error. And there's a particular implementation that people tend to use in this space called KLM, which is open source, originally developed for machine translation, which implements smoothing. So you can go and read about Canzer Night. It's pretty interesting, but we're not gonna talk too much about the details here. So this happens to be very popular in data filtering. There's no particular reason has to be this one, but this is just what people use. And the nice about and gram modeling is it's very simple. When I say fitting a model, you should think of this as just counting the number of engrams and then.
+
+说话人 2 03:00 
+Normalizing.
+
+说话人 1 03:02 
+Okay, so just to go into a little bit of depth here. So it's your starting point is maximum likelihood estimation of language models. So you have a corpus of text and you want to estimate conditional probabilities like p of n given the last m minus 1 words, a cat. And what you do is you count the number of n grams and then divided by the number of, you know, the and minus 1 grams of the conditioning context. Okay, so this is, you know, very easy in principle.
+
+说话人 1 03:35 
+Now implementing this efficiently is takes a bit of work, but the main problem is that there's sparse counts. So many of the engrams are exactly shown 0 times, even though they're very reasonable, especially when n grows. And this was a whole point why n gram models couldn't really be scaled appropriately because you hit that curse of.
+
+说话人 2 03:55 
+Dimensionality.
+
+说话人 1 03:57 
+So to mitigate this, you know, some people devised, you know, cleaning, smoothing to handle unseen and grams. And there's more details on this, but roughly this says, well, maybe if I don't have enough data to support this count, I can sort of use a lower order and gram. So, you know, remove one word from the context and count the number of times in appears given cat and then try to either interpolate or back off to that.
+
+说话人 1 04:28 
+Okay, so that's all say about how Engram, you know, modeling works. I think even in this era of neural language model, you know, it's good to know that how Angram models work. So let's download and gram. So this is a model that's been trained on Wikipedia. I'm just gonna download it. And.
+
+说话人 2 04:52 
+Then.
+
+说话人 1 04:55 
+Let's punch some sentences through. So this sentence is Stanford University was found in 18. 95. This is actually an excerpt taken from Wikipedia, so it should be, you know, reasonable. And if you compute the probability, so you first compute the log prob, and then you compute the perplexity by this normalization, then you get 100 and you know, 87. Okay, so you know.
+
+说话人 2 05:24 
+It's some number. And.
+
+说话人 1 05:27 
+Then here's another example, you know, this is taken from the CS three thirty six, you know, website. So let's see how well it does. So this is a higher perplexity means that it's less likely. Okay, kind of makes sense because this stuff doesn't really probably show up in Wikipedia. It's not in, you know, it's not abnormally high because it's still fairly good, well formed English and many engrams there, I think show up in Wikipedia as well. What about ASDF? This is just gibberish. This gets assigned.
+
+说话人 2 05:59 
+Higher perplexity.
+
+说话人 1 06:03 
+And then there's da. So this should get assigned pretty high perplexity. But for some reason, this particular engram assigns a pretty low perplexity. So, you know, it's an and gram model. So it's not particularly clever or good, but you know, you don't need to be the best model. You're just doing data filtering to create a model. So this can be very crude and fast. So CC net, which is a paper out of, you know, I guess it was Facebook back then. They, which we talked about last time, they basically did this. And actually that's fine. So they basically looked at paragraphs of text and those were the items they sort of progress by increasing perplexity and just kept the top 1/3. And this is what they use to create the first Lama data set. Okay, so this is, you know, heuristic, but you know, kind of, you know, if you had to write down something really quickly, and this kind of makes.
+
+说话人 2 07:18 
+Sense.
+
+说话人 1 07:19 
+Okay, so nasonite language modeling is fast, but.
+
+说话人 2 07:24 
+It's crude. Alright.
+
+说话人 1 07:28 
+Feel like there is.
+
+说话人 2 07:30 
+Some.
+
+说话人 1 07:32 
+Content I was I meant to go through that's missing. Oh, well, maybe.
+
+说话人 2 07:35 
+Got deleted.
+
+说话人 1 07:38 
+All right, so that's you can fit an ngram model to your target data. And then you can use that to score the raw data and choose the top scoring documents. Another thing you can do is fast text. And this is in some ways more, you know, popular. This is also from, you know, Facebook. They released a lot of open source, you know, tools, although Canada, I think was, yeah, created before that. So here they develop it for text classification. And this paper, I mean, this is 2016. So a lot of people were developing all sorts of fancy neural models. And they said that show that well, this actually almost linear classifier worked as well as much faster. So that's why the software package actually became very.
+
+说话人 2 08:30 
+Popular.
+
+说话人 1 08:32 
+So the motivation here was that if you're doing, let's say, bag of words classification, so you have a sentence of length L, your vocab size is v, and you want to classify into 64 classes. Then immediately you have to define this v by k matrix, which if vnkr both large, then this gets pretty big and you get into sparsity issues. And the way it would work is that you take your documents and then you just do minor classification. So that's fairly, you know, straightforward. So the problem is that the number of parameters huge. So fast text says, well, let me just do a linear, basically dimension of reduction. So instead I'm going to map my vocab space into a hidden dimension, which is smaller than k, possibly smaller than k 16. And then I'm going to classify from H. So notice that there's when you look at the prediction, the forward pass, there's no non linearity. It's just a linear classifier. You can also think about as a matrix factorization if you want. And the number of parameters is greatly, you know, reduced. So limitation, I think is, you know, reasonably, you know, optimized. It's paralyzed and they use asynchronous SGD and.
+
+说话人 2 10:00 
+And.
+
+说话人 1 10:01 
+So here's, okay, so the question is, this is bag of words. And, you know, we want to not just look at words, but we want to look at.
+
+说话人 2 10:12 
+N grams.
+
+说话人 1 10:13 
+So this paper also, you know, extends to n grams in a fairly simple way. So you take a sentence and you get some chopping up into your angrams. And here the problem is that the number of diagrams can get quite large and it actually can be unbounded, right? So when, remember when we talked about tokenizers, if you just chop up into words, you're gonna get, you know, you don't know how many words are. So the simple thing is that you just do hashing. So you define some number of bins, maybe 10 million, but in this example, eight. And then you just hash every diagram into that. So you these the cab maps to 2 and cat in maps 1 and so on. Okay, so of course there might be some collisions, but PL, you just live.
+
+说话人 2 11:08 
+With that.
+
+说话人 1 11:10 
+I mean, in some sense, the the opt when you minimize the loss collisions are sort of accounted for. If there's like two words that have nothing to do with each other, then the weight is gonna somehow represent the maybe the average of the two.
+
+说话人 1 11:27 
+And also note that often we use fast classification with K co sue classes. Is this document good or is it bad? And in that case, this is just normal, basically binary classification, linear classification. Okay, so of course, it doesn't take too much imagination to imagine, well, if you can do linear classification, you can use fancier models such as Bert or even llama. The only thing is that it's going to be slower. And therefore you run into this tradeoff where if you use a giant model to do classification, maybe you should use those flops to actually just train the model.
+
+说话人 1 12:06 
+So that's the only concern because though, you know, the web is very large and remember you were filtering the web down quite a bit. So you're gonna spend a lot of compute on, let's say you're filtering like down to 1% of the web, right? So that means, you know, you have your classifier, that amount of compute you spend has to be a hundredth of, you know, taking a for a forward pass through the data set.
+
+说话人 1 12:36 
+Okay, so the final method I'm gonna talk about is this a thing called data selection for language models using importance resampling. And here are the basic ideas that you have your R, it's a raw data set. You have your target data. And then I'm gonna build an importance weight estimator, which is the analog of the language and gram model or the fast text classifier. And then I'm gonna use that to get a bunch of.
+
+说话人 2 13:09 
+Documents.
+
+说话人 1 13:11 
+Okay, so first, just a kind of a quick refresher of importance resampling, I guess. So you have this shows up in many contexts like, you know, particle filtering and, you know, Monte Carlo methods. So you have a target distribution. So it's a distribution, not a dataset, where you want to ideally draw samples from this, but you only have a proposal distribution queue where you can draw samples. So for example, if you have a vocab of 0,1,2, three, 2, two, three, let's say this is your target distribution and your proposal distribution is.
+
+说话人 2 13:49 
+This.
+
+说话人 1 13:51 
+Now what do you do is you sample from queue because that's the only thing you can sample from. So let's say you get a bunch of.
+
+说话人 2 14:01 
+Samples.
+
+说话人 1 14:02 
+Okay, so notice that Q has a lot of more mass on zeros. You get a lot of more zeros. And then what you're going to do is you compute weights over your samples by looking at this importance, your ratio P over.
+
+说话人 2 14:19 
+Q.
+
+说话人 1 14:20 
+So you're trying to make up for the fact I've sample from Q. So I want to divide that out where I really want P and you normalize. And again, you get a distribution over your samples and now you resample and you, that sort of balances out the distribution. So now you see that there's more threes because P had more probability distribution on mass on.
+
+说话人 2 14:48 
+3.
+
+说话人 1 14:50 
+Okay, so this is a fairly elementary, but it's a building block. Now then now we go to how we do data selection.
+
+说话人 2 14:59 
+So we have.
+
+说话人 1 15:00 
+A target dataset, not a distribution. We have a dataset which is small, and we also have this raw data set, which we're gonna call the proposal dataset, DQ, which is large. So you could, let's just fit a distribution, P to DP, fit a distribution Q to DQ and door do the importance resampling that I, we talked about just, you know, two minutes ago.
+
+说话人 1 15:28 
+Now the main problem is that DP is really small. Remember, target distributes high quality data. You don't have that much of it, which is the whole point. You're trying to get more of it. So you don't have that much of it and it's too small to estimated a good model. So again, this the idea is you just use hash and gram. So this is something that we already saw with fast text as well. You, you know, take whatever text you have and then you essentially, okay, so you basically hash all the, we're doing unigrams for now. So you hash each unigram. So, and you basically count the number, estimate the probability of every hashed and.
+
+说话人 2 16:19 
+Gram.
+
+说话人 1 16:21 
+Okay, so in this case, this the cat in the tab hashes to this. Notice that there's some hash collisions though in the hatch into the same value. But, you know, whatever, this is all crude. And then you just estimate the probability of each of these, the probabilities. Okay, so, and then to evaluate the probability of a new text, you, you.
+
+说话人 2 16:47 
+Hash.
+
+说话人 1 16:49 
+The new text and you multiply the probabilities together. Okay, so I got a little bit unlucky and the probability is gets zeroed out. You can do some smoothing if you want. So it turns out in Python, hash is not in terms. Cuz every time I run this, I'm gonna get something else. And the paper shows that this indeed helps a bit.
+
+说话人 1 17:11 
+The games are not, you know, super massive, but, you know, compared to doing fast text, which is the heuristic classification, the gains on the glue benchmark using bird style models. There is some.
+
+说话人 2 17:26 
+Lift.
+
+说话人 1 17:27 
+And the comparison with fast text. So the main idea here is that modeling a whole distribution is in some sense a more principal approach, right? Because you want to sample data from your distribution and you have a different distribution queue and now you're trying to essentially compensate. And so this could be better for, you know, diversity because you're trying to match the distribution as whereas fast text, you're essentially trying to classify whether something is in the distribution or not. And it doesn't have any guarantees about matching the distribution. Okay, but it's also fast, like fast text, and both can be improved by having better models. So instead of using linear models based on n grabs, you can increase n. You can use neural approaches.
+
+说话人 2 18:24 
+As well.
+
+说话人 1 18:27 
+Okay, so just to s wrap up this part. So we look at n gram models, linear classifiers and importance resampling. But the general framework I think is something.
+
+说话人 2 18:41 
+That may be.
+
+说话人 1 18:43 
+Worth taking away, which is that the setup given a target dataset and a raw data set, find a subset that's similar to the target and all these methods have the basic recipe, which is estimate some sort of model based on the raw data and the target dataset, which gives you a scoring function. And then keep examples in the raw data set based on that scoring function, usually high scores are kept. So just to walk through this, in the Ken LM case, the score is simply the probability of, or I guess maybe the perplexity if you want to normalize by the number of tokens under the target. Okay, so R is not used here. And then you keep examples with score greater than threshold and you can, you know, randomize a little bit around the threshold.
+
+说话人 2 19:38 
+If you want.
+
+说话人 1 19:40 
+So you can also use a discriminate classifier where the score is what's the probability that this example came from the target as opposed to the raw data set. And then you keep examples where the score is of greater than some.
+
+说话人 2 19:56 
+Threshold.
+
+说话人 1 19:58 
+And then the importance resample. Says the score is the ratio of, you know, two generative models, which could be Ngram models, in this case, PF, you know, the target distribution over the raw distribution. And to use a score, this is really the importance weights you resample with probably proportional.
+
+说话人 2 20:21 
+To that.
+
+说话人 1 20:23 
+Okay, so at a high level, all of them are doing essentially the same thing. You have, you fit some sort of distribution that tells you one looks like target as opposed to raw, and then you apply that to the raw data set. Okay, maybe.
+
+说话人 2 20:43 
+I'll pause here.
+
+说话人 1 20:44 
+In case there's any.
+
+说话人 2 20:45 
+Questions. Yeah, so I'm sort of like a high level philosophical thing. We have an idea of what good data is, but we kind of not talked about what that's actually like what like a good document looks like. So what this is doing is like making sure that the words fit next to each other. When you have like an Instagram now like that, you know, one comes after the other, but it doesn't ensure that they, it makes any sense on like a larger level. Or if you want that you just increase the N and the N gram.
+
+说话人 1 21:27 
+Yeah, so the question seems, I think, is that if you're using an Ngram model, it's only looking at local contacts. And maybe that's not great for assessing quality because if you shuffle everything around, it still looks good to the n gram model. So there's definitely that danger that it's very easy to adversarily gain, right? If you can construct, you can definitely construct. Example is that the n gram model thinks it's high. I mean, why you showed you one, the other thus happens to be, you know, pretty high, but somehow on average, you know, you're doing okay. And in some sense, maybe if a document looks like grammatical English and it looks like news or, you know, some scientific paper, all you want to make sure is that model assigns high probability that if you get some, you know, bad examples, it's not the end of the world. Yeah, so should think.
+
+说话人 2 22:28 
+About the is just like food, like true nonsense web pages that yeah.
+
+说话人 1 22:33 
+You should I would say this is filtering out true nonsense is I think a good way to look at it. As I go through some examples, I think maybe it'll become a bit clearer that this is these classifiers are not just used for quality. And for some of the other use cases, I think it's much more maybe compelling why it should.
+
+说话人 2 22:56 
+Work.
+
+说话人 1 22:57 
+Okay, so the same data filtering machinery can be used on different tasks. So I'm going to talk about language identification, quality filtering, and toxicity filtering. So language identification, the idea is that you want to find text of a specific language. Maybe it's English, maybe it's Japanese. And you could ask, well, you know, you could just train on all the languages. Why don't you do that? The problem is that it's can often be difficult to, you know, do the curation and processing of high quality data in a given language. And there's also, you know, the problem that if you train, let's say, you only care about, you know, one language. Now, if you have data from all the other languages, you're gonna be spending less compute and tokens on any given languages, on the given language. So this was a, and that could hurt your.
+
+说话人 2 23:59 
+Performance.
+
+说话人 1 24:00 
+In that language. For example, you know, Bloom, which was trained in about 20,22, I believe, was only trained on 30% English. And as a result, the English performance maybe was not as good as it could have been. It was strong on other languages. So they're in a compute limited your regime, you're definitely at risk of compromising the quality of the, of the language you care about.
+
+说话人 1 24:30 
+Now, that said, if you have enough capacity and you're training huge models, then you can definitely train multilingual models and there's could be even positive transfer between languages. So all their kind of frontier models are trained on heavily multilingual, sometimes even hundreds of like 1 hundred plus languages. So, you know, one simple way to do this is fast text is a toolkit for training.
+
+说话人 1 25:00 
+Simple classifiers. It also comes with some off the shelf models. And one of the ones that typically gets used is they have like a language identification model. And this is just off the shelf classifier. It supports a lot of different languages. And it was trained on basically multilingual sites, including Wikipedia, which has a lot of different languages of translation sites and you know, for some reason, Southeast European news. So DOMA uses this. They basically run a fast access fire and keep pages with English probability greater than.
+
+说话人 2 25:42 
+Point five.
+
+说话人 1 25:44 
+Now, so let's try it out. So there's this model language ID that you can just kind of download. And then let's see how well that does. So the quick brown fox jumps.
+
+说话人 2 25:56 
+Over the.
+
+说话人 1 25:58 
+Lazy talk. Let's see where are the predictions?
+
+说话人 1 26:08 
+Okay, I don't know why. Okay, there we go. So, okay, so this says English. This is a label English. And the probability of English is point seven one. Okay.
+
+说话人 2 26:21 
+So I mean.
+
+说话人 1 26:23 
+Would have guessed it would be higher. It looks pretty English to me. If you duplicate the sentence, the probability isn't, you know, changing, which is good. You know, saying the same thing doesn't make it more English. There's some informal English, which this is kind of weird. This is, I guess, more English than the quick round fox.
+
+说话人 1 26:46 
+German actually gets classified fairly. Oh, sorry, this is German. Now the label is German. Okay, here that is German. Math gets classified pretty weakly as English code doesn't is highest is like Russian. This is hello is.
+
+说话人 2 27:08 
+Apparently.
+
+说话人 1 27:09 
+You know Italian. This is French Wanger. That's good. And this is, I guess, a tricky one where I put in some Spanish and also some English. And I guess that favor the Spanish.
+
+说话人 2 27:21 
+In this case.
+
+说话人 1 27:23 
+Okay, so this gives you a sense. I mean, it's always good to play with these classifiers, right? Because just because it's a classifier you can download and everyone uses doesn't mean it like works all the time. So I think obviously for short sentences, it's less reliable because there's just less information about what's happening.
+
+说话人 1 27:41 
+Low resource languages is tough. There's a worry that for things that don't really, our dialects of English, this could be viewed as not English. I think if you want to distinguish between similar languages, that's also can be easily confused. And code switching, I don't even know what ground truth is, but it'll do, hopefully one of the.
+
+说话人 2 28:04 
+Languages.
+
+说话人 1 28:07 
+So just talk through one case study. Open web math was this paper from two years ago. And the goal here is to create a large corpus of mathematical text where here I'm saying that, you know, let's assume that math as a language. So first they use some rules to filter, then they train can alarm on this large data set of proofs called proof pile and kept it if the perplexity was below some threshold. And they train this fast test classifier, which we've been talked about to predict mathematical writing. This is a kind of hacky, but they set the threshold of the classifier. Yeah, if it's identified as math based on rules to be relatively low. And if it's not identified as math according to roles, it's needs to be higher. And as a result, they produce of 15 billion tokens and they train some models that do better than models that were trained on 20 times more data that weren't really special.
+
+说话人 1 29:10 
+So this is kind of one of nice examples of the utility of data filtering, right? You could train on all this data, but if you care about, let's say, a particular domain like math, you can just go out and get more of it and target that data set. And if you train on that, you can be much more data efficient.
+
+说话人 1 29:32 
+Okay, so let's talk about quality filtering. So quality filtering obviously is something that is doesn't really, I mean, it's a catch up for a bunch of things and what is quality. So remember that some papers explicitly don't use model based quality filtering. But more recent papers have just kind of given in and say, well, I mean, it just works a lot better. So GBD3, we talked a little bit about this last time, trained a quality classifier by taking positive samples from the high quality sources that they had, or rather than non common cross sources they had. And a negatives are just common quality train a linear classifier and keep documents sarcastically based on this score, which is something that just turns numbers basically sort of sharpens the the, you know, the.
+
+说话人 2 30:30 
+Threshold.
+
+说话人 1 30:32 
+And the llama first llama paper, they use pages referenced by Wikipedia. So not Wikipedia as positive negatives are just sampled from common crawl. And then they keep documents that are classified positive. I don't think there was actually sampling in that. Just interesting.
+
+说话人 1 30:52 
+5 one was another paper that their philosophy was kind of, you know, interesting. They really want a high quality data that look like textbooks and they want to train a very small model. So they train on synthetic data, but also filter data. So for the filter data, what they did is they took the Python subset of the stack. Remember the stack is this pre processed dataset coming from Github of.
+
+说话人 2 31:18 
+Code.
+
+说话人 1 31:19 
+And then they define the prompt, which effectively asked GPT four to determine the educational value for a student whose goal is to learn basic coding concepts. And then they prompted GPT four and classified 100 k documents from this Python subset. And that became the positive examples. They train a random forest classifier on these examples where the embeddings fed into a random classifier were from some pre trained cojam model. And then they selected data from R that is classified by the, you know, classifier. So they run the classifier, then overall of our, and then get that data. So this is kind of interesting because there is a random force classifier. And in this case, where does t come from? Well, t doesn't exist, April. T comes from prompting GPT four with some.
+
+说话人 2 32:18 
+Prompt.
+
+说话人 1 32:19 
+Okay, so this is something that you'll see more increasingly as the models get better is that instead of, you know, looking at sources like, well, maybe books one is great or maybe web Wikipedia is great.
+
+说话人 1 32:32 
+Now, if you have a good model, you can just ask the model to for the type of data you want. Maybe I want more chemistry data or I want more mathematical data that, you know, does a lot of proofs or elementary math or something. And you just select the language model, a fairly sophisticated language model, give you tea. And now once you have tea, you turn the recipe that we've been talking about so far. So the Phi 1 results again looks good. So they had a baseline where they just took the Python subset of a stack, which was the this R and the performance on human value, which is a coding Dsi was only 12% after ninety six case types of training. And then they train the exact same model architecture on this new fancy data set. And it was already at 17:00,36. So they declared.
+
+说话人 2 33:28 
+Success.
+
+说话人 1 33:30 
+Okay, so these are some examples of quality filtering. Any questions about.
+
+说话人 2 33:38 
+Quality filtering? Yeah, your target is from using Bill and not using on like the module.
+
+说话人 1 33:50 
+Yeah, so the point is that you can, why can you get away with using GP four here? Because you're using it only on to create 1,000,100 k examples and to create and then using that to distill a classifier, which is much faster. And 100 k is much less than the size of R, which is, you know, hundreds of tens or hundreds of millions.
+
+说话人 2 34:18 
+Probably.
+
+说话人 1 34:26 
+Okay, so let's talk a bit about toxicity filtering. So I'm gonna talk about how the DOMA paper does toxicity filtering. So there's this dataset called Jigshot toxic comments. And this came out of a project where they were trying to help people have better discussions online. So they wanted to build a classifier that could identify when there was problematic content. So they took the data comments on the Wikipedia talk pages. And had annotators annotate them with, you know, toxic, severe toxic of seeing thread and salt identity hate. And so the dome of folks train two fast sex classifiers. One which is basically, you know, it's corresponding hate and the other one is correspond to SFW. And so here's some examples of the, you know, of the, you know, data set. So let's download the model and try it out. So the first example, you know, are you threatening me for dispute neutrality? This gets classified as safer work because, I mean, seems fine. And the second one is flagged as NSF w and you know, and these sentences are both.
+
+说话人 2 35:56 
+Fine.
+
+说话人 1 35:56 
+Okay, so just give you.
+
+说话人 2 35:58 
+A sense.
+
+说话人 1 35:59 
+Yeah, I don't wanna show too many of these examples, but you get the idea. You can play it on with your own time. Okay, so that's all say about filtering.
+
+说话人 1 36:13 
+So now let's talk about deduplication. So there's two types of duplicates, exact duplicates. And the thing to realize is that the web actually just inherently has a lot of exact duplicates based on mirroring. So if you just look at Project Gutenberg, you know, you'll see that, you know, the same exact site gets mirrored on a bunch of different URLs. So if you're just crawling as Common Crawl does, it has no way knowing that these are mirrors, you know, just get you the exact same.
+
+说话人 2 36:48 
+Content. And.
+
+说话人 1 36:51 
+Then there's newer duplicates, which is basically the same text that differ by a few.
+
+说话人 2 36:56 
+Tokens.
+
+说话人 1 36:57 
+And we're gonna show you algorithms that deal with, you.
+
+说话人 2 37:00 
+Know, both.
+
+说话人 1 37:01 
+So new duplicates. When does this happen? Well, you have terms of service and licenses like the MIT license. This thing shows up. I don't know how many times on the web. It's just copy and pasted everywhere. Maybe there's even, I know maybe people take it and actually change some things or they mess up copy and paste and remove a comma or something. That's all possible. And then there's cases, if you look at these datasets, your new duplicates are, it just gives you an idea of what new duplicates might look like. Sometimes you have this article where someone just seem to have paraphrased best actor in a negative role for most impactful character by everything else seems the same. This is just like missing a comma here. Not really sure how where that comma went off to, but you know, there could be like just annotator or processing.
+
+说话人 2 38:02 
+Errors.
+
+说话人 1 38:03 
+And then this one's kind of interesting. There's clearly this a very kind.
+
+说话人 2 38:08 
+Of.
+
+说话人 1 38:09 
+Add like a text, which they just replace Canada with USA and some other slides. So this probably is generated from some sort of template system where they slotted in entities. So, you know, these mirror duplicates are obviously different, but obviously if you train on tons of, you know, this, once you have this document, this one doesn't give you that much value. Let's just put it that way. So in extreme case, so if you look at C4, remember, C4 was filtered based on these set of rules and look for sentences that looked like English. You'll see this sentence, which is indeed English, that shows up an astonishing 61,000.
+
+说话人 2 38:57 
+Times.
+
+说话人 1 38:59 
+And for whatever reason, if you actually trace down where this comes from, not MIT license, I have to.
+
+说话人 2 39:08 
+What.
+
+说话人 1 39:09 
+Okay, do I, should I accept these cookies? Okay, fine. This is a random product from Amazon that has graffiti, mass shrines and you know, there's this text and apparently this is for s whatever reason I, you know, I don't even know how there's 61,000 copies of.
+
+说话人 2 39:27 
+This, but.
+
+说话人 1 39:29 
+That's.
+
+说话人 2 39:30 
+What it is.
+
+说话人 1 39:32 
+And so the idea is that this text isn't necessarily bad, right? It's perfectly good.
+
+说话人 2 39:37 
+English.
+
+说话人 1 39:38 
+But you don't want to like take 61,000 epochs over this thing. I mean, it's just, you know, kind of pointless. So deduplication is sort of complementary to quality filtering. Says this piece of data, I don't want to ever train on it. Deduplication says, well, this is might be fine, but I only want. A small number of these rather than sixty one thousand copies. So this is in work showing that deduplication makes language models better.
+
+说话人 1 40:11 
+The first most obvious thing is that you can train more efficiently, right? Deduplication reduces the number of tokens. And if you haven't thrown away information, then you can save a lot of effort. And then the second is that you can also avoid memorization. So we haven't really talked about this, but language models trained on data can memorize that data, which is bad for, you know, copyright or privacy reasons because it can just regurgitate the training set. And deduplication is one tool. It's not definitely not perfect, but it can help mitigate some of these.
+
+说话人 2 40:48 
+Risks.
+
+说话人 1 40:52 
+Okay, so here's how to think about deduplication in terms of design space. So first you have to think about what is the unit that you're deduplicating. What is an item? Is it a sentence, is a paragraph, is a document? The second question is, how do you match? Do you, what is considered a duplicate? Is it exact match? Is it a fraction of common sub items? And then the final thing is, what action do you take? Do you remove all the instances or do you remove all.
+
+说话人 2 41:25 
+But one?
+
+说话人 1 41:27 
+Okay, so the key challenge, and this is an algorithmic challenge, is that fundamentally deduplication is about comparing items to other items, right? Quality classification. You can take an item, you can classify as high quality or not. Deduplication is fundamentally a paralyzed thing. And remember, these datasets are large, so you can't, if you're trying to do something quadratic, that's kind of a no go. So you need some sort of linear time algorithm to scale, but still do something that's.
+
+说话人 2 41:58 
+Pairwise.
+
+说话人 1 42:00 
+So the building block of all this is hash functions. So hash functions just as a review, is a function that maps an item, which could be a sentence, could be a document, to a hash value, which is an instructor or string. And the value is much smaller than item. And the thing that's relevant about hash functions is that you could potentially get hash collisions. So which means that you have two distinct items that map to the same hash value. So in general, if you, I'm sure you value, I guess all of you have used dictionaries or hash tables, hash collisions are generally bad, but later we'll see that there actually can be good in some limited doses.
+
+说话人 1 42:42 
+There's many types of hash functions which trade off between efficiency and collision resistance, which means don't collide. There's cryptographic hash functions which are used for security sensitive applications like in Bitcoin. You really don't want collisions because otherwise, I mean, someone might steal your money or if it could compromise things. And then there is things where, but these are slow. And then there's hash functions, which are generally used for hash tables that are not collision release resistant, but, you know, fast. And so we're generally gonna go with the latter category because we want things to be fast. And this, the, the we're doing cryptography here. Okay, so we're gonna use a thing called murmur hash, which takes strings and returns, you know, values, but you can use a bunch of other.
+
+说话人 2 43:36 
+Hashes as well.
+
+说话人 1 43:40 
+Okay, so let's start with the exact deduplication. So here's a simple example. The IM is just a string and I want the exact match and I wanna remove all but.
+
+说话人 2 43:50 
+One.
+
+说话人 1 43:51 
+So here's a bunch of items and what I'm going to first do is compute a mapping from hash value to the list of items without hash. So, and then once I have that, I keep one item from each.
+
+说话人 2 44:11 
+Group.
+
+说话人 1 44:12 
+So each group corresponds to a hash value. And in the case of exact tube, exact match, assuming there's no hash collisions, then you basically do of exact dedupe. So hello shows up twice here and now it shows up once. And of course, hello uppercase exclamation point is just a completely distinct item because we're doing.
+
+说话人 2 44:34 
+Exact.
+
+说话人 1 44:36 
+So this the nice thing is that this is very, you know, simple. It's clear what you're doing. It's high precision. So you're never gonna throw away anything that you didn't need or you needed. But the con is that you, it doesn't work for near duplicates. And the other thing is that's nice is that, you know, this. This is very simple to implement. We kind of wrote this in a map reduce way and you can scale it and paralyze it fairly easily. And this is something that C4 uses actually to prepare their dataset. So their unit is of deduplication is 3 sentence spans. They use exact match and they remove.
+
+说话人 2 45:18 
+All by one.
+
+说话人 1 45:20 
+So one thing that is always kind of bother me, but I don't, no one else seems to care is that when you're looking at three sentence spans, right? So you have this document and then you have the three sentence span. And if it's marked as a duplicate, you're just gonna you know, you know, do surgery and take that those sentences out. And so the resulting document might not even be coherent, but then people say, you know, who cares and move on. Okay.
+
+说话人 2 45:54 
+So.
+
+说话人 1 45:55 
+There's another way to do deduplication that is less map reduced, but more kind of like hash table. I think the, you know, Bloom filters are, you know, some of you might have seen, but just to go through it, because I think it's kind of a cool method. So this is, you know, efficient and it's approximate. So you get it's more efficient, but it's, you know, obviously it's not always doing the exact thing, but, you know, we're, we're very, I have not, we are not, you know, being too picky here. Okay. So it's the nice thing is a very memory efficient, you can update it, but you can't delete. And it's basically a representation of set where if you ask for set membership and it returns no, then it's definitely a no. But if it's returns yes, then you know, most likely if you set your hyper parameters right, it's yes. But you know, there's a small probability that you have of, of no, like you have a false positive. And then you can, you know, set your parameters to drive down the false positive rate if you like.
+
+说话人 1 47:09 
+Okay, so just to walk through what this looks like. So suppose you have five items, the cat in the hat, and later we'll test out with some items that don't show up in the set. First thing is you're going to define a hash function that maps to m bends. M is going to be 8 here. So to build the Bloom filter, we're gonna do, you know, something fairly simple. You just, you make your bit array with a number of bins and then go through every item hash it the hashes to 2. So I update the second item, cat hashes a 7, update the seventh item in the hat. Okay, so I just, you know, populate this bitter ray and the bitter ray, I don't keep track of the item. So I have no idea if I have a false positive.
+
+说话人 2 48:05 
+Or not.
+
+说话人 1 48:08 
+Okay, so let's just Sandy to check that every item that I put in is actually an item. So to query it, you just compute whether that item hashed is in the table and indeed everything should pass. And now let's look at the non items and see how they share. And you'll see that, you know, some of the non items are, you get a zero, which is what you want. But some of the items, the boom feather says, oh, actually it's in the set. So the number of mistakes here is 4. And if you compute the false positive ray, which is the number of mistakes over the total number of times the procedure produced, you know, a positive. Then the false positive rate is in this case, you know, point four, which is pretty bad.
+
+说话人 1 49:10 
+Now, of course, this is a bin 8. And if the bin were to grow, then this would get better. In fact, it grows, their probability is one over in the number of bins. Okay. So, but you look at this and say, well, that's not really good because if I want the error probability to be, you know, 10 to the minus 10, then I need a lot of bins and that's not gonna hurt our memory. So there's a more clever solution here, which is to use more hash.
+
+说话人 2 49:44 
+Functions.
+
+说话人 1 49:45 
+Okay, so let's say I use two hash functions and I'm going to essentially, I still have the same, you know, bit array, but for every item now I'm going to. Are you. Use hash it twice. So the under seed wall 0 gets hashed 2. I'm gonna pop it in. And then the with seed 1 is gonna hash to 5. So I'm gonna pop it in there. So every item gets hash into k, not necessarily distinct, but hey, case slots. So then I go through the cat and then I fill up this, you know, table. Okay, so now I, when I do the querying, I take an element and I'm going to return 1 if the table set was set to 1 for all k hash functions. Okay, because if I put it in, I have to set K bits. And so if I'm testing, I need to check the K locations and check that.
+
+说话人 2 50:49 
+They were all set that.
+
+说话人 1 50:54 
+So indeed all of those pass. And now let's look at. So in the number of your mistakes now is.
+
+说话人 2 51:06 
+3.
+
+说话人 1 51:07 
+And the false positive rate.
+
+说话人 2 51:09 
+Decreased. So no, that's great.
+
+说话人 1 51:13 
+So of course, this is a toy example, but you know, you can really drive down the false positive rate with modest memory, you know, spend. Okay, maybe I'll pause there before I go to analyzing this a bit more, you know.
+
+说话人 2 51:31 
+Formally.
+
+说话人 1 51:40 
+Okay, so let's think about what happens.
+
+说话人 2 51:43 
+More generally.
+
+说话人 1 51:46 
+So let's say we have 1,000 bins, we have 10 cache functions, and we're gonna hash 100 items. The question is, you know, what is the false positive rate? And the way to think about this is that I'm gonna consider a test input that's not in the set. That way is gonna hash into a particular location like I. Okay, and then I'm gonna, so I'm gonna now consider putting items, the end items into the boom filter and see what is the probability that hits I. If anything hits I, then that is is a bad sign. Okay, so let's warm up.
+
+说话人 2 52:27 
+Here.
+
+说话人 1 52:28 
+So let's say I'm just in n is 1. I'm just inserting one element and k is also 1. So I'm only using one hash function. So now the question is, what is a chance that there is a hash collision between I and whatever element I'm putting.
+
+说话人 2 52:44 
+In?
+
+说话人 1 52:45 
+And the answer to that is just one over the number of bins, right? Assuming everything's kind of independent, that's going to be, you know, 0.001. Okay, so now I'm still n is still one, but I'm going to use K hash functions. So then I essentially, if I'm going.
+
+说话人 2 53:13 
+To.
+
+说话人 1 53:16 
+Then the criteria is I have to miss not just one time, you know, but you know, K times. Okay, so this is a probably a miss one. So 1 minus that is a probably I.
+
+说话人 2 53:29 
+Hit.
+
+说话人 1 53:32 
+And then that racer Kate times is a probability a have hit, you know, on K and then y minus that is the probability I, you know, have to miss.
+
+说话人 2 53:47 
+K times.
+
+说话人 1 53:50 
+So now the probability here goes down, you know, a little.
+
+说话人 2 53:55 
+Bit.
+
+说话人 1 53:58 
+Okay, so now if I'm inserting n items, so I'm asking the probability that the test been is 1 after n. So now instead of missing k times, I have to miss k times n times. So then basically this expression, but just k times.
+
+说话人 2 54:20 
+N. And finally.
+
+说话人 1 54:25 
+Because the test item is something that I.
+
+说话人 2 54:30 
+Am.
+
+说话人 1 54:32 
+You're also hashing, so I get sort of K chances, you know, to miss. So the false positive rate, actually, this is what kind of helps, the K really helps is that I can, you know, drive down the false positive rate.
+
+说话人 2 54:48 
+With K.
+
+说话人 1 54:49 
+So that becomes, you know, F goes from point six three to point zero.
+
+说话人 2 54:56 
+One.
+
+说话人 1 55:00 
+The, you can actually look at the expression F here and compute the optimal value of, okay, given a fixed, you know, ratio as this is a sort of asymptotic calculation. And then you find that this results in k is scaling as order m over n. So the number of hash functions you should use is an order of number of bins over the number of items you're.
+
+说话人 2 55:32 
+Hashing.
+
+说话人 1 55:33 
+And if you do that, then f turns out to be, you know, point five and the false positive rate is point five.
+
+说话人 2 55:44 
+To the k.
+
+说话人 1 55:45 
+So you see that in this particular case, I wasn't optimal because optimal value is actually k equals 6 and the false positive rate is 0.08 as opposed to 0.0, sorry, 0.008 rather than 0.01. Okay, so you can read more about this. There's some lecture notes that allow you to trade off the compute, the memory and the false positive rate. Okay, so the Bloom filter has some hyper parameters that allow you to control whether the, you know, what your desire false positive rate is, how much memory you have, how much compute you're willing to put.
+
+说话人 2 56:32 
+In and so on. Yeah, I notice that we can.
+
+说话人 1 56:42 
+So you're saying that the optimal.
+
+说话人 2 56:45 
+K, you know, went down.
+
+说话人 1 56:49 
+And so why does the F go down? So the, let's see. So if a K goes down, I think it's not Mona Tadak, right? So if you use a small, very, I think if you use a very large value of k, that's actually pretty bad because then you just fill up the, you know, the Bloom filter and if you use too small, that's also not very good either. So I think there's a sort of optimum. And whether it goes down or up depends on which side you're.
+
+说话人 2 57:27 
+On.
+
+说话人 1 57:32 
+Okay, so in Delma, they set the false positive rate to 10 to the minus 15th. And they use a Bloom filter to do their exact deduplication. And they did it at the paragraph level. Okay, so that was exact deduplication. And the problem with exact deduplication is that it doesn't capture some of these near misses where morally it's a duplicate, but we're not able to.
+
+说话人 2 58:04 
+Detect that.
+
+说话人 1 58:06 
+So now how do you do approximate that membership? And to talk about approximate set membership, you need a notion of a similarity measure. So one common one that's used is Jakarta similarity. So the Jakarta two sets a and B is the ratio of their intersection over the union. So as an example, if I have 1,2,3,4, and 1,2,3,5. If you compute the Jakarta, the intersection has size 3, the union has size 5, and therefore the check card is point six. Okay, so we're gonna say that two documents are near duplicates if their Jakarta similarly exceeds some.
+
+说话人 2 58:50 
+Threshold.
+
+说话人 1 58:51 
+And generally the threshold be, you know, fairly high, like point nine if you want to only, you know, match if you're like missing a comma.
+
+说话人 2 59:00 
+Or something.
+
+说话人 1 59:02 
+Now notice that there's nothing semantic about this. You could be, you know, missing a word like not, and of course that changes the meaning completely or some content word. But this is just trying to get documents that look fairly superficially similar.
+
+说话人 1 59:19 
+Now the algorithm challenge is how do you find near duplicates in linear time? Okay, so to work up to that, we're going to try to rewrite the Jacquard similarity, which again is a pair wise. You can't compute jacard of one element. You can only compute it if you have two elements. And I'm gonna try to write it in terms of a hash function, which you can compute in terms of one element. Okay, so there's a cache function called min hash, which has the nice property that the probability of a hash collision is exactly Jakarta.
+
+说话人 2 59:54 
+AB.
+
+说话人 1 59:55 
+Right? So normally, remember, you think of hash collisions as, you know.
+
+说话人 2 59:59 
+To be.
+
+说话人 1 01:00:00 
+Avoided all, you know, costs, you really don't like them. But here, it's not that you want more hash collisions. It's just that hash collisions are something that you want to control for. You want just the right level of hash.
+
+说话人 2 01:00:16 
+Collisions.
+
+说话人 1 01:00:18 
+Govern by the similarity. So the problem again, to save it, probably the similarity is equal to the probability of collision. So the more similar two things are, the more they should collect. So.
+
+说话人 2 01:00:31 
+That's the intuition.
+
+说话人 1 01:00:35 
+Okay, so min hash is defined as follows. You take a set and you.
+
+说话人 2 01:00:42 
+Hash.
+
+说话人 1 01:00:45 
+All these elements. Remember these return numbers and just take the minimum element. So, you know, in my, at first glance, if you haven't seen this, it's like kind of not obvious why just taking them in actually gives you this property of expectation equal to Richard Card, but the argument is actually fairly, you know, simple. So the way to think about it is that you have your five items and you have two sets. And I'm gonna look at this sort of cursor matrix.
+
+说话人 2 01:01:17 
+Representation.
+
+说话人 1 01:01:19 
+So a has 1,2,3,4, b has 1,2,3,5. And now the random hash function induces a permutation over.
+
+说话人 2 01:01:32 
+The items.
+
+说话人 1 01:01:34 
+So permutation might be 3,2,1,4,5. For.
+
+说话人 2 01:01:37 
+Example, this hash function right there.
+
+说话人 1 01:01:41 
+And now let's look at which item is first in a and which item is first in B. Okay, so that corresponds to the, you know, the IM corresponds to the minimum hash and the item, each item has the same probability as, you know, being first because it's the hash function you're assuming has, you know, it's of.
+
+说话人 2 01:02:11 
+Random.
+
+说话人 1 01:02:12 
+So if 1,2 or 3 are.
+
+说话人 2 01:02:15 
+First.
+
+说话人 1 01:02:17 
+Then the min hash is actually gonna be the same, right? Because a minimum, if these are, you know, first the minimum here is equal to the.
+
+说话人 2 01:02:29 
+Minimum, you know, here.
+
+说话人 1 01:02:31 
+Right? But if the minimum, if the first, the minimum hash is 4 or 5, then the first in a will not be the first in B and the min hash will be different. Okay, and then now you can say, see that the probability of the min hash being equal is exactly 1,2 or 3, which is identically exactly the intersection. Okay, so if you're in the intersection and that of item is first.
+
+说话人 2 01:03:02 
+Then.
+
+说话人 1 01:03:03 
+You're gonna get a.
+
+说话人 2 01:03:04 
+Collision.
+
+说话人 1 01:03:06 
+And if you're not in the intersection, then that one being first, you'll not get a collision because you're gonna get the min for one of them and you're gonna get some other value for the.
+
+说话人 2 01:03:16 
+Other one.
+
+说话人 1 01:03:22 
+Okay. All right. So you can check this empirically if you don't believe me. So generate 1,000. I guess we're running this on a and B and checking what's the probability that the, you get a collision. And it turns out the estimated Jakarta is point six. It's not exactly point six. I think there's some rounding, but you know, it's pretty close. Okay, so now we've taken this chicar similarly, which is paraphrase function and reduced it to some probabilistic, you know, s urinary function just on the.
+
+说话人 2 01:04:00 
+Item.
+
+说话人 1 01:04:02 
+But this is actually, you know, we're far from done because now we can hash our items, but a collision doesn't tell us that these two are similar, right? It's just like more likely that more similar things will be hashed together, but we want something a bit stronger here. So this is where locality sensitive hashing comes. And so right now, so far, we just have a hash function that takes two, you know, hashes sets and the sets will collide if with probably.
+
+说话人 2 01:04:36 
+Jakarta.
+
+说话人 1 01:04:39 
+But we really want a and B to collide if and only if ideally if the jacard of Amb is exceeding some.
+
+说话人 2 01:04:48 
+Threshold.
+
+说话人 1 01:04:49 
+So somehow you have to sharpen the probabilities, right? You want to say that if the card is over the threshold, then with almost like probability 1, they're gonna be hashed together. And if it's below. The threshold then with basically probably zero or very small.
+
+说话人 1 01:05:05 
+So now how do we do this? It's sort of taking kind of the same trick, which is using more hash functions. And here the construction is you're going to break up your N hash functions into B bands of R hash functions. So for example, if you have 12 hash functions and 3 bands, and each band would have 4 hash function, so you have H1 through H4,H5 through H8,H9 through H12. Okay, and then we're just gonna declare that a and B are going to collide if for some band, all of its hatch functions return the same value. Okay, so I have a and B. I'm gonna.
+
+说话人 2 01:05:51 
+Hash.
+
+说话人 1 01:05:52 
+Using all 12 hash functions for both a.
+
+说话人 2 01:05:55 
+And B.
+
+说话人 1 01:05:56 
+Using the main hash. And now I'm going to say if this band, for example, if the hash values for H1H2H3H4 all agree, then they're gonna collide or this band. Okay, so there's a sort of and ore structure, which is the key to, you know, making sharpening the probabilities around the threshold. Okay.
+
+说话人 2 01:06:21 
+So.
+
+说话人 1 01:06:23 
+Now we just have to, you know, do some analysis to calculate what is the probability that a and b collide. Okay, so similar, I'm gonna use SIM to refer to the Jakarta similarity.
+
+说话人 2 01:06:40 
+So.
+
+说话人 1 01:06:43 
+Okay, so I'm going to say, let's say I have Jakard's similarity of 0.8. In that case, I'm gonna have 5 bands. Each band has 10 hash functions, so total of 50 hash functions. So what is the probability of a fixed band they're matching? So probably a fixed band matching is simply, you know, point eight to the R, right? Because the probability of a hash or a single hash function is just a Jakarta, which is.
+
+说话人 2 01:07:20 
+0.8.
+
+说话人 1 01:07:22 
+And now what is the probability of that some band matches? Well, it's a probability that, you know, the that one fix. So this is a probability that a fixed band doesn't match. And this is a probability that, yeah, all of them don't match. And then, so this is probably at least one matches. Okay, so now you see the probably collision is, you know, point four, you know.
+
+说话人 2 01:07:50 
+3.
+
+说话人 1 01:07:53 
+Okay, so it's kind of reshaping this probability. Before, if you have one hash function of B and RS 1, then the probability would be of collision would be point eight and now it's, you know.
+
+说话人 2 01:08:08 
+Point three.
+
+说话人 1 01:08:09 
+Okay, so, you know, that's, but let's, I guess here's the picture you should have in your head. So on the x axis is similarity. And what we want is the mapping from similarity to probability of collision to look something like that. If the threshold is the desired threshold is, you know, point five, then I want everything down here to be, you know, near zero and everything up here to be near 1. So let's see what this looks like. I'm gonna set for various similarly values, I'm gonna set B equals 10, r equals.
+
+说话人 2 01:08:45 
+10.
+
+说话人 1 01:08:46 
+And notice that what this happens is that it squashes down some of these low probabilities and then it sharpens some of these high probabilities. Okay, but you know, maybe I want to make this a little bit sharper. So what I'm gonna do is to increase R from 10 to 20. And what that does is that moves the curve to the right to make it harder to match and also sharpens the threshold. So if I do that, then you'll see that now these probabilities go up and now these probabilities are much smaller, right? So in before even a point seven probability, some point seven similarity had your probability of point two four, which is, you know, kind.
+
+说话人 2 01:09:37 
+Of high.
+
+说话人 1 01:09:38 
+I really don't want this. So I want to squash this. So in squashing that, I can now get it down to, yeah, point zero seven, which is, you know, pretty good, I guess.
+
+说话人 1 01:09:51 
+But now I've also squashed some of these probabilities and I, the goal isn't to shift everything, right? Otherwise I might. What do exactly do duplication. So now there's another trick. If I increase B, which is a number of buckets or bends, then I can essentially get these probabilities like point nine to be in the nineties now. And these probabilities are still.
+
+说话人 2 01:10:22 
+Fairly low.
+
+说话人 1 01:10:24 
+Okay, so this picture shows that as you increase B, I get to shift this curve to the left. So increasing R will sharpen the curve and move things to the right. And then increasing B will shift the curve to the left so that you can with appropriate setting of BN are you can get your like really sharp.
+
+说话人 2 01:10:44 
+Sigma.
+
+说话人 1 01:10:48 
+Okay, so just an example of what this looks like in practice. So there's this paper that we saw last time that uses a near duplicate, near deduplication using minhash lsh and their values b equals 20 and r equals for 50. So this r is large, which means that they wanna really sharp threshold. So there's a formula which you can compute, which says the threshold is point nine. Okay, so that means you, for every 100 words, you can only about basically one word to be, you know, different. So this is fairly, you know.
+
+说话人 2 01:11:35 
+Strict.
+
+说话人 1 01:11:36 
+Deduplication and the probability that a, you know, fixed band matches is, you know, this to the R, which is point 0,5. And then the probability of collision is 0.64. So one thing that's interesting is that I'm computing the probability of collision at the threshold. So in some sense, you know, that should be somewhere in between 0 and 1. And it turns out that it converges to 1-1 over e, which is, you know, around, you know, point six ish. Okay, so around the threshold, you know, you could go either way, but as soon as you go above the threshold, you have very high probability of being in a collision. And below the threshold, you have very low probability of being.
+
+说话人 2 01:12:32 
+In a collision.
+
+说话人 1 01:12:37 
+Okay, so with that, I'm gonna, you know, summarize. Actually, maybe I'll ask if there's any questions about deduplication. So deduplication makes you run faster, avoids memorization. You can do exact deduplication with boom filters, or you can use min hash LSH to do heat approximate deduplication.
+
+说话人 2 01:13:08 
+So any question like, are most of the functions or like based on exactly like, okay, but if I like rewrote the text later, cuz since like synthetic data is like, let me rise up wondering how do we feed.
+
+说话人 1 01:13:23 
+So given that synthetic data is on rise, how did you duplicate using something that's like, you know, paraphrase sensitive? So there are some papers, for example, 72 Patrick didn't mention that look at essentially embedding so that are can allow you to get a more semantic notion of similarity or due to. And this all fits into the same framework because, you know, in some sense, LH, LSH was device to find approximate nearest neighbors. And so all you have to do is have a embedding and that can you embed all the documents and you can find nearest neighbors in that space. Obviously, there's a higher cost if you're gonna run and embedding to embed your documents. And also, you know, we are sort of working in a regime where documents are, you know, the, the near duplicates are like really near.
+
+说话人 2 01:14:23 
+Duplicates.
+
+说话人 1 01:14:26 
+I think you have to be very careful if you're doing some sort of more fuzzy duplication. You can throw out a lot of your data if you are too.
+
+说话人 2 01:14:36 
+Permissive. Another question. That's all better. I wonder if there's any situation where you actually have to duplicate data since it's like so high quality be repeated.
+
+说话人 1 01:14:48 
+Yeah, so the question is, well, if the data is high quality, maybe you do want duplicates. And that's actually right. So in s, a lot of language modeling papers, there's. This is a sort of the mid training regime where you have a bunch of high quality sources. You actually want to take multiple epoks over high quality data. So the deduplication is more, I would say, for kind of the pre training where you have all this stuff and you have 60,000 copies of some random thing you just want to like clean that up. But I think the optimal thing to do is, well, clearly not. I don't know what optimal thing to do is, but it's probably if you have documents that occur a lot of times, you could also signal that there's more importance to it. And maybe the right thing to do is like taking the number of the count and I don't know, taking the square root or sub log or something so that it shows up, doesn't proportionally show up in your training data, but it's you acknowledge that it's important not to go take more epochs.
+
+说话人 2 01:15:57 
+Over it.
+
+说话人 1 01:16:01 
+Okay, so let's summarize. So this lecture was mostly about giving you algorithm tools. So we look at Angram models, linear classifiers in importance, resampling as ways to do filtering. And with filtering you can do language identification, quality filtering, toxicity filtering, anything I guess where you have a targets status set and you wanna get more of that dataset, then you can apply these tools. Or if you don't have a target dataset and you have a strong language models, you can prompt that a language model to synthesize a or synthesize or filter down of, you know, a lower quality dataset to get to t. And then you get a fast classifier that you're and you're off to the.
+
+说话人 2 01:16:52 
+Basis.
+
+说话人 1 01:16:53 
+And then second, we look at deduplication, which is important for reducing the amount of computing you're spending on, you know, kind of you're wasting essentially. And the algorithm tool here is hashing. Because hashing is what allows you take these kind of pairwise notions of similarity and collision and turn them into urinary functions, which allows you to have this linear time, you know, property.
+
+说话人 2 01:17:25 
+And.
+
+说话人 1 01:17:26 
+You know, we saw some sort of clever methods where basically using multiple hash functions and using these kind of and or constructions allows you to kind of shape your, you know, criteria and in ways like the LSH.
+
+说话人 2 01:17:40 
+Example.
+
+说话人 1 01:17:42 
+So now you have all of the tools, you know, now in some sense, if you ask how you teach data, this is kind of only the beginning. The you really have to spend time with the data, looking at it, filtering and training models. And that's how you build your intuitions over what works and what doesn't. So hopefully you'll be able to do that a bit in assignment.
+
+说话人 2 01:18:06 
+For.
+
+说话人 1 01:18:07 
+Okay, that's all for the data lecture. And next week we're gonna start doing reinforcement learning and you know, alignment, which is will be.
+
+说话人 2 01:18:16 
+Our last unit.
+

@@ -1,0 +1,810 @@
+2025年7月14日 下午 10:17|1小时 15分钟 43秒
+
+关键词:
+reward model、reward function、same reward、high reward、reward question、good reward、more reward、expected reward、reward values、partial reward、baseline reward、single reward、reward policy gradient sort、main reward、higher reward、process rewards、lower reward、state times reward
+
+文字记录:
+说话人 1 00:00 
+I'm tattoo gave an overview of RL from verifiable Rewards and talked about policy gradient algorithms such as PPO and GRPL. This lecture, we're going to deep dive into the mechanics of policy gradient GRPL. So we won't necessarily cover new material, but just to take the existing material and go a bit deeper, show you code and some math as well. Okay, so just to kind of remind us what we're doing. So we're doing reinforcement for language models. And in reinforcement learning, you have to define the states and actions of rewards and so on. And just to be very clear, I think this hopefully should be obvious by now, but just to state the obvious. So the state is the prompt plus the response that you've generated so far. And each action is generating a particular token, the next token. Okay, the reward is essentially how good the response is. And for the purpose of this class, we're gonna focus on outcome rewards, where the reward is a function of the entire response. We're going to focus on rewards that are verifiable. So the computation is to determine 6. Some function just returns a reward as opposed to having to ask a human.
+
+说话人 1 01:23 
+And in this setting, you know, typically in reinforcement learning, you see notions of, you know, discounting and bootstrapping where it's multiple turns where you're getting, and that really makes sense when you have rewards in and in the middle. If this is more of kind of you just generate a bunch of factions and you see if your answer is correct. So that obviously introduces a bunch of difficulties because it's a very sparse and delayed reward. But it also simplifies, I think, some of the conceptual thinking around this. So for example, you might have a question, math problem, and then there's a, you know, chain of thoughts, you rethink for a while. And then the finally the language model might generate, therefore the answers 3 miles. And then the reward would have to extract the 3 miles and see if that matches some ground truth.
+
+说话人 1 02:15 
+So in reinforcement learning, typically people talk about the transition dynamics. It's very important in this case, in the language model setting, it's very simple. It's just the plus operation. You just append the action into the state. This has a number of important implications because you can, because you understand the dynamics of the world, you can do planning, AK, you know, test time, compute. And this is something that, you know, roboticists would only dream of if they had a transition dynamics of the world they could simulate and they could do all these things in language modeling, we can do that, but not true in general reinforcement learning. And the other thing to kind of realize is that the notion of state is really made up, right? If you think about reinforcement learning and concepts of robotics, the state is the joint angles, the position, maybe an image or something. It's really much grounded in the real world. Whereas language models the state is just tokens that the language model happens to generate. And this introduces a lot of.
+
+说话人 2 03:24 
+Flexibility.
+
+说话人 1 03:26 
+And introduces a lot of degrees of freedom where the language model can kind of make up its own scratch pad in order to derive at the final answer. Whereas often a robot is very much limited by the external world in terms of what states are even achievable. So the issue here isn't about reaching any state, which is often the challenging, you know, robotics and control, you can't even reach the state here. You can reach any state you want by just writing down tokens. But the challenge is making sure that these tokens actually lead to some ground truth answer that's, you know, correct. So I think it's worth reflecting on. It's all reinforcement learning, but the intuitions and what's hard and what's easy kind of changes in the language modeling.
+
+说话人 2 04:11 
+Setting.
+
+说话人 1 04:13 
+Okay, so the policy in this case is just a language model action condition on the state, which is the prompt and response given so far. This is often fine tuned from an existing pre train language model. And then there's multiple names for this rollout episode trajectory. You in this outcome reward setting, you have start with the state, you generate a bunch of actions, aka tokens, you get a single number, which is a reward. And then your objective is to maximize the expected reward, where the expectation is taken over prompts, which the environment gives you, and also the response tokens, which your policy pie that you're optimizing gives you. Okay, so hopefully that's, you know, makes everything kind of very grounded and. You know, precise.
+
+说话人 1 05:04 
+Okay, let me know if you have any questions about this, the setup. So let's now talk about policy gradient, which is a whole class of methods for learning the policy, which essentially start with the policy and try to improve it using gradient methods. So for notational simplicity, we're just gonna let a denote the entire response instead of a single.
+
+说话人 2 05:29 
+Action.
+
+说话人 1 05:31 
+Because we're in the outcome reward setting, it doesn't really matter. You can just think about the actions as being all generated at once by the language models, and then you get a single reward at the end.
+
+说话人 1 05:44 
+Okay, so remember, we want to maximize the expected reward with respect to the policy Pi. So just expect a reward is integral over the distribution over states times policy of action sequence given state times reward. So this is pretty straightforward.
+
+说话人 1 06:02 
+And policy gradient says do the obvious thing. You want to optimize something, let's take the gradient. So you start taking the gradient. So the gradient only touches the policy. And this is the, you know, key trick and things of like the policy gradient theorem, some people call, but it's really just the chain rule for log. So this basically gets rereen as a pie and then the graining of the log. And then I'm gonna rewrite it in terms of expectation. So expectation is hiding basically the distribution over SNA here. Okay, so this form should be very familiar. So this is the gradient of the expected.
+
+说话人 2 06:50 
+Reward.
+
+说话人 1 06:51 
+Okay, so naive policy gradient basically says I'm just going to sample a prompt from P, sample a response from a, and then I'm just going to update the parameters based on whatever's inside this expectation. Okay, so think about if you're doing SGD, you look at the, you know, the expected loss and you just sample a term and you just evaluate and put, you know, go with that. So interpretation, this is essentially the same as SFT, except for everything is weighted by.
+
+说话人 2 07:27 
+The reward.
+
+说话人 1 07:28 
+Okay, so in SFT, a human being writes down a for you and you just mimic a and update the parameters and maximize the probability of the action. And now a is generated by the.
+
+说话人 2 07:39 
+Model.
+
+说话人 1 07:40 
+And now, but you get to hit it with a reward. Okay, so just as a kind of an intuition building, so suppose that the reward is either 0,1, is it correct or wrong? So in this case, the naive policy gradient is just gonna only update on the correct responses. So R is gonna be 0 for the actions that lead to incorrect responses. So those are gonna be completely ignored. And then on the correct responses, r is 1. So you just essentially sample, you select the responses that are correct and you just do SFT on this. The only difference is that the dataset is changing over time because after you do an update, now you have a new policy and you generate the dataset based on that policy and you iterate.
+
+说话人 2 08:25 
+And so on.
+
+说话人 1 08:26 
+But this is very natural. And you know, the only challenge here is not the only challenge. The main challenge is that people talk about policy gradients being high noise or high.
+
+说话人 2 08:42 
+Variance.
+
+说话人 1 08:43 
+So in stochastic gradient descent, if you're doing supervised learning, this is also can be the case that your gradient is very noisy. And typically if you use larger batch sizes and just kind of keep on going, then it sort of empirically seems to work out. Reinforcement learning is a kind of whole another level in terms of noise and variance that you have to deal with. So in particular, if you look at the setting where you have 0,1 as a reward, think about solving a hard math problem, right? So this, in this setting is a sparse rewards. The rewards are sparse, which means that very few responses are gonna get reward 1, most are gonna get zero. So if you have a bad policy and you roll out and you generate your actions, most of your rewards are going to be zero. Which means if you look at the gradient, your bake is basically making a zero bring an update. So if you're understanding where your policy is so bad that you're not able to get reward at.
+
+说话人 2 09:48 
+All, then.
+
+说话人 1 09:51 
+Guess why? You're not making any grading updates and you're sort of stuck. So that's a pretty bad setting to be in, at least in supervised. Learning, you're at least making an update towards something. You're guaranteed to make an update towards something. But in reinforcement learning and sparse rewards, that's not true anymore.
+
+说话人 1 10:10 
+Question? So the question is, why is the dataset changing over time? So if you think about this is your objective function, so you're gonna optimize. So you iterate, each iteration, you're going to compute the gradient and then update the parameters. So the gradient, computing a gradient involves, you know, sampling a response and then updating. Okay, so now your parameters are different. So the next time you sample response, it's going to be might be different now because it's coming from the new model. And if we sample multiple responses, those responses, that's gonna be a different dataset from a different distribution than.
+
+说话人 2 11:00 
+Where you started.
+
+说话人 1 11:02 
+So your dataset hopefully is gonna get better over time. So intuitively, even if you have this sparse reward, as long as you can get some of the easy questions correct and you can get some reward, you can update your model and you hope that the model can generalize beyond those examples so that next iteration when you're sampling and solving a slightly more difficult questions, you're going to get a bunch of responses that happen to get the right answer. And now your data set wall have higher and higher reward, you know.
+
+说话人 2 11:35 
+Over time.
+
+说话人 1 11:39 
+Okay, so this is in contrast to reinforce similarly with human feedback where you use pair right preferences, you estimate a reward model and the reward model is generally a bit more, you know, continuous. It's gonna assign essentially a numerical value to every response, how good it is. This is quite different than the sort of verifiable reward setting where you, it's sort of like correct or.
+
+说话人 2 12:05 
+Incorrect.
+
+说话人 1 12:06 
+And notice that, I mean, I'm sort of emphasizing this point that it's all reinforcing alone and it's all even kind of within this scope of language models. Sometimes you even use the same algorithms like PPO, but the intuitions for and for maybe how you set the hyper parameters will and how you tune the model will be kind.
+
+说话人 2 12:25 
+Of different. Yeah, what is that? Rewards are sparse, right? So you don't update the parameters if the reward is 0. Is that correct? Then should we just like set it to like negative once when it goes to other, right?
+
+说话人 1 12:37 
+So we can use those rewards. Yeah, so the question is, well, in this case, if the reward is 0, then you don't update the parameters. Why not make the reward like minus 1? So at least you're kind of pushing the model away from those incorrect responses. This is something.
+
+说话人 2 12:54 
+That will.
+
+说话人 1 12:55 
+Happen automatically when we look at, you know, baselines because.
+
+说话人 2 13:01 
+There.
+
+说话人 1 13:02 
+This is just a simple naive policy grading where you obtain against rewards. We're gonna show that there's much better things than just using the reward question, I think, yeah, question. And then I think there was a question over.
+
+说话人 2 13:14 
+There. Yeah, we obviously work only when we, the wasn't is a whole response, the last word of response.
+
+说话人 1 13:23 
+So the reward is a function of the prompt and the response, the whole response.
+
+说话人 2 13:29 
+And we know the response is correct or not. Only when we generate this complete the. So we have good idea.
+
+说话人 1 13:36 
+On the bus token. So, so, so yeah, so you're getting at sometimes you have reward before even finish. And so the other type of reward is called process, you know, supervision or process rewards, which allow you to basically keep track of how well you're doing. There are things you can do there. And generally, that's better if your process reward is good for simplicity. Right now, I'm just assuming it's an outcome reward. But absolutely, if you have reward.
+
+说话人 2 14:06 
+Earlier.
+
+说话人 1 14:08 
+You should always evaluate the reward as early as.
+
+说话人 2 14:10 
+You can if you trust them.
+
+说话人 1 14:12 
+The problem with process reward and language model is that you just don't, it's really hard to get a good process reward because unless you, it's, it's unless you're come completely going off the rails, it's hard to tell like how well you're.
+
+说话人 2 14:27 
+Doing. So another question, the same question, like what force the reward model here that we are going to, how are we getting 0 and.
+
+说话人 1 14:39 
+1? So question is, what is the reward model? I'll show you some examples of this. But you can think about the reward model is which I think for your assignment, you're implementing basically the language model generates some stuff and then you parse the answer out and you check the answer against your answer key and you return 1 if it matches in 0.
+
+说话人 2 14:59 
+Otherwise.
+
+说话人 1 15:04 
+Okay, so maximize expected reward policy gradient sort of does the obvious thing, naive policy gradient, sorry, does the obvious thing, but you have this high noise and variance problem. So the key idea in, you know, policy gradient methods is using what is called a baseline. And so recall that this is the expected reward. If you could actually compute this expected reward, you'd be pretty.
+
+说话人 2 15:34 
+Good.
+
+说话人 1 15:36 
+Because then you could just compute that, but you can't. So you instead use unbiased estimate, which usually means ripping off the expectation, sampling SNA and ripping off the expectation. This is unbiased estimate, but its variance can be pretty high.
+
+说话人 1 15:59 
+Okay, so just to give a toy example to appreciate what I mean by a kind of high variant. So suppose you have just two states, so two prompts, if you want S1 and S2. And from S1, you have two possible actions.
+
+说话人 1 16:12 
+A1 gives you reward 11. A2 gives you reward 9. And from state S2,A1 gives you reward 0 and A2 gives you reward 2. Okay, so S1 fundamentally gives you high reward and S2 just gives you lower reward. And of course, the best policy would be in S1, you want to choose A1 and S2, you wanna choose A2, right? So you don't want S1 to ch and going to a 2. But you notice that this 9 is actually larger than this two. So you can end up in situations where each state, they think about this as like a really S1 is being a really easy question and S2 is maybe a harder question. So you just because something gets high reward doesn't mean you absolutely should be, you know, updating aggressively against it. So if 9 is greater than 2, so if you're doing naive gradient updates, you might pick S1 going to a 2, and just like, wow, this is great. I'm gonna get a nine times the gradient. And then I look at S2A2 and I say, well, that's only reward two. So I'm pushing up that.
+
+说话人 2 17:36 
+Less.
+
+说话人 1 17:37 
+When in fact, you know, if you look at the whole picture, it's clear that's maybe just locally not, doesn't really make sense. I mean, I would stress that in expectation, if you look at overall states and actions, it all works out. The math all works out, but you have to look at kind of everything to, you know, get that okay. Does this example.
+
+说话人 2 18:01 
+Make sense? Yeah, A2 is the first scheme because a 1 already has.
+
+说话人 1 18:08 
+11. So the question is why you.
+
+说话人 2 18:11 
+Choose a 2?
+
+说话人 1 18:13 
+So you're gonna choose whatever your policy decides, right? So in a policy, when you're starting out, you don't know which is higher reward. So you're just gonna maybe choose something.
+
+说话人 2 18:21 
+Random.
+
+说话人 1 18:23 
+Right? So if you happen to choose a 2, then you might upweigh that into every one 9. I mean, it's actually worse because you say, wow, reward 9, this is great. And you, the more you choose it, the more you're obtaining against it. And then you sort of get stuck in this local optimum where you can't even choose. There's no probability of mass left on a 1 because you've updated against a.
+
+说话人 2 18:47 
+Two so much.
+
+说话人 1 18:52 
+Okay, so here's a ideal key idea behind baselines is that you're just gonna maximize the baseline reward instead of expected reward, we're just gonna subtract off some B of s. Okay, called the baseline, you know.
+
+说话人 2 19:05 
+Function. So.
+
+说话人 1 19:08 
+This is just the expected reward shifted down by a constant expectation of BFS. And the beauty of this is that this quantity doesn't depend on the policy pie. So even if you expand it out, you'll have a X, you know, integral over PFS times pi a given s, but integral over a given s is just 1. So this is just, you know, it doesn't depend on the policy.
+
+说话人 2 19:36 
+At all.
+
+说话人 1 19:38 
+Right? And so, of course, optimizing expectation R is identical to optimizing expectation of are minus this because it's just a constant. Okay, so that's the whole idea of, you know, baseline. It preserves the sort of optimization problem. And now if you. Do sort of naive policy gradient on this new objective. And basically you you sample a s, you sample a, and then you're just looking at, you know.
+
+说话人 2 20:12 
+This difference. Okay.
+
+说话人 1 20:16 
+So notice that this.
+
+说话人 2 20:18 
+Is true.
+
+说话人 1 20:20 
+This works for any BFS as long as BFS doesn't depend on a, which, you know, it's not in arguments or can't depend on a, then this is valid. So now the question is, well, over all possible functions, VFS, which one should we.
+
+说话人 2 20:35 
+Use?
+
+说话人 1 20:36 
+And let's just revisit this two state example just to provide some intuition. I'm gonna make some kind.
+
+说话人 2 20:44 
+Of.
+
+说话人 1 20:46 
+Assumptions. You assume your initial policy is a uniform distribution overall SNA, and your grading of your policy initially is one just to kind of ignore that for now. So if you look at the variance over your gradients, you'll see that sometimes you get 11, sometimes you get 9 and sometimes you get zero, and sometimes you get 2. And the variance is 5.3. Okay, so if you define a baseline, which is 10 for S1 and 1 for S 2, then let's see what happens. So you subtract off the baseline from these reward values. So for S1, you subtract 10, for S2, you subtract 1. So now the baseline variance is a lot less. It's only 1.1. So we reduce the variance from 5 to 1, which is pretty.
+
+说话人 2 21:45 
+Good.
+
+说话人 1 21:47 
+By just subtracting a baseline, which again doesn't affect your.
+
+说话人 2 21:50 
+End.
+
+说话人 1 21:51 
+Results in expectation.
+
+说话人 2 21:56 
+Yeah, so I think there's a the Assumption that like this explanation of the office doesn't depend on the policy side. So I was wondering like if it is okay skill for us to visualize like gonna be as let's say like initial a very original.
+
+说话人 1 22:12 
+Rules and pause. So good question. So BFS is not supposed to depend on.
+
+说话人 2 22:16 
+Pause.
+
+说话人 1 22:17 
+But your question is, can I just take an initial policy and set B of s to f? So absolutely. So it's one of these things of reinforcement learning. You have to be a bit careful of is what's constant and what's not. So you can always take a frozen model and say that's a constant. And as long as your expression doesn't depend on that, that's actually treat as a constant, like you're not differentiating through it, then it's all fine. Which means also that if you are sampling and you're performing an update that you have to kind of keep an old copy of that policy because of hope. If that thing is changing now, you can kind of into these weird settings where you're not actually, it's not actually a constant.
+
+说话人 2 23:01 
+Anymore. What if we initialize a high aspect of the policy from the last and the last meeting? Is that, yeah, instead of like a very.
+
+说话人 1 23:12 
+Rare movie. Yeah, so you can do that. So typically what you do is you essentially have a policy. It's kind of a old policy or a, you know, anchor for a while, or if you're doing PPO, you have a value function and then you kind of hold it for a while and then you do some updates and then you kind of update it on. So I mean, practice is what you do. Part of this, like it can't depend on a is really like for the theory kind of to work out. But in, you know, practice, there's, you know, there's all sorts of things that.
+
+说话人 2 23:52 
+People do.
+
+说话人 1 23:56 
+Okay, so what we showed is that at least for this example, anecdotally, you can define some baseline that reduces the variance. So this is kind of giving you hopefully a concrete sense of the power of a baseline in the lower variance you have, the faster the convergence.
+
+说话人 1 24:14 
+Okay. So you might wonder what is the optimal baseline to use. And if you do some math, I realize there's actually a very kind of nice closed form, you know, solution for this is written for one parameter models. If it's multi dimensional, I think you have like some covariances. And this is just expectation of this derivative square times r divided normalized by the same expression without dollar. Okay, so this is in general kind of annoying to compute, especially if you have high dimensions. And because this thing is going to be some sort of like, you know, you know, covariance. So typically what people do is you just ignore this stuff and you say, well, I'm just gonna try to, I'm gonna set baseline equals expected reward divided given s. Okay, so this is not optimal, but it's kind of like a, you know, good heuristic. And even the, this is, you can't compute this, right? Because anything with expectation, you can't compute, you can only estimate. But this is now, I think, a good guiding principle for what you want your baseline.
+
+说话人 2 25:34 
+To be.
+
+说话人 1 25:35 
+It's the expected reward given your state. Okay, so just to recap, we said we have the naive policy gradient. We can introduce this baseline is valid for any BFS. And now we've come to a conclusion that maybe this is like a good choice if we can try to get a handle on expected reward.
+
+说话人 2 25:58 
+Given us.
+
+说话人 1 26:02 
+Okay, so this particular choice has connections to advantage functions. So in reinforcement learning, you typically have a value function, which is the expected, you know, reward given a state. And then you have a Q function, which is expected reward given a state. And I've taken a particular.
+
+说话人 2 26:22 
+Action.
+
+说话人 1 26:24 
+And note here that Q and R are the same because we assume outcome rewards and a has all the actions. In general, R is gonna be like the returns from that state rather than just a single reward. Those two are same for now. And the Vantage function is just defined as the difference between the reward I would get if I took action and sort of if I, you know, average over possible actions.
+
+说话人 1 26:52 
+A. Okay, in particular, it's asking, it's measuring how much better is action a than the expected value that I get from us, what is the advantage of taking a as opposed to just going along with the baseline? Sorry, baseline is a ambiguous, but we're going with the policy. Okay, so then if.
+
+说话人 2 27:16 
+You.
+
+说话人 1 27:17 
+Look at B equals this sort of heuristic form that we talked about earlier. Then the baseline reward where you just subtract off BFS is identical to an advantage. So you can interpret, you know, the baseline if you have the advantage. Sorry, if you have this sort of, this choice of baseline is identical to optimizing the The.
+
+说话人 2 27:48 
+Village.
+
+说话人 1 27:50 
+Alright, so that's just to give you some intuition behind what this baseline is doing in general, we are probably gonna deviate from that because we can't estimate any of, we can't compute these expectations exactly. So we're gonna do something else. So in particular, we're just going to, I'm just gonna let delta denote whatever thing we put in to the estimate. So all of the methods are going to basically take the grading of the log policy and time, something that's going to be based on the reward. Okay, so all the algorithms you see you PPO, GRPO have this sort of form where you're basically you rolled out and got an action and now the question is how much do you wanna move towards that action? And it's gonna depend on, you know, the reward. Okay, so you can put the reward here, then that's not your policy gradient. You can do reward minus sum estimate of the expectation.
+
+说话人 2 29:01 
+And.
+
+说话人 1 29:02 
+You can also do divide by the standard deviation, which is what GRPO does, which will see you later. Okay, but this is a sort of the general.
+
+说话人 2 29:10 
+Form.
+
+说话人 1 29:11 
+And so the exact form of GA priority isn't that important because, you know, next year there's gonna be GRPO2 or whatever. And, but the, the all of this like policy grain and stuff is I'll be giving the same lecture next year. Okay. Alright, speaking of lecture, you can check out Chelsea's deep RL class for a few more, you know, derivations and intuitions about Ro in general. Okay, so any questions about policy gradient and baselines and advantages?
+
+说话人 2 29:57 
+Yeah, this positive. Or if your baseline is like a baseline report.
+
+说话人 1 30:04 
+So what's the definition of a base? The baseline is any function that B of s, which only depends on s and not.
+
+说话人 2 30:12 
+A.
+
+说话人 1 30:13 
+That you're essentially sticking into a policy gradient.
+
+说话人 2 30:18 
+Algorithm.
+
+说话人 1 30:20 
+You can think about.
+
+说话人 2 30:22 
+It that way.
+
+说话人 1 30:23 
+So basically you update policy, grain will update based on this and baseline is whatever function you choose there. So those of you have seen kind of control variants, this is basically the same idea from, you know.
+
+说话人 2 30:38 
+Statistics.
+
+说话人 1 30:42 
+Okay, so now let's try to dig a little bit, you know, deeper. We're going to actually define a simple model, a simple task, and actually walk through some code that may or may not look like assignment 5. And we'll try to hopefully do some runs. Okay, so a lot of this exposition is based on the GRPO, you know, algorithm. So this slide I might have to update next year, but it's sort of trying to generalize it beyond the particular choices here. So GRPO, remember what tattoo said last time the it's sort of kind of interesting lineage where you had PPO then people did BPO and GPR. GRPO is a kind of a, you know, simplication of.
+
+说话人 2 31:30 
+PPO.
+
+说话人 1 31:32 
+As opposed to kind of algorithms. You start simple and then kind of growing complexity. But really, I think GRPO exists in 2024 as opposed to, you know, in 2000, I think it was 17 or something when PPO was introduces because the language model setting provides some kind of natural structure that motivates GRPO. You can't really do GRPO naturally, I think in, you know, classical RL settings with like the robot trying to walk. And the particular thing is that and the language modeling setting, you have a prompt, you can generate a bunch of responses from that prompt. And this gives you a natural group structure to compute the, essentially the baseline, which turns out to be the average over the.
+
+说话人 2 32:23 
+Rewards.
+
+说话人 1 32:24 
+Right? The whole point is that you're trying to kind of minimize the variance, and the group is a kind of a natural comparison set. That's why this is kind of relative, it's relative to the group. Whereas if every rollout looks different, there's no natural group structure, then GRPO doesn't really make sense and you have to find something else. And that's something else generally tends to be a value function which aggregates overall the possible states and actions. And here in this case, you kind of have an empirical estimate over all the possible responses without considering everything because of the LM setting. Okay, okay, so here's the pseudo code we're going to, they'll look over it in actual Python in a in just a second, but I'll just flash it up here. Okay, so let's define a simple task.
+
+说话人 2 33:19 
+So.
+
+说话人 1 33:20 
+You know, I wanted something simple enough where I can actually train a very simple model on my laptop without and running a language model transformer wasn't gonna, I mean, I don't have a fancy laptop, so that wasn't gonna happen. So here's a simple task, sorting numbers. So the prompt is numbers and the responses and numbers that are hopefully sorted. So now you have to define a reward to complete the definition of the environment and the reward should capture how close to the sorted ground truth the response.
+
+说话人 2 33:55 
+Is.
+
+说话人 1 33:56 
+Okay, so immediately you actually see one of the interesting things in reinforcement learning is that you can define a reward and you know, different ways. So for example, you can define a reward which is like 1 if it's sorted in 0. Otherwise, which is presumably what you care about, but you're gonna remember the sparse reward problem. If you start up with a policy that doesn't do anything, you're mostly gonna get zero breeze reward and you're not gonna really make much progress. So let's define a reward that gives partial credit. So we're gonna define reward that returns the number of positions where the response matches the ground truth. Okay, so you basically the code looks like this. You look at the ground truth, which is the sort of the front, and you just count the number of positions where the response matches the ground truth. Okay, so the reward for the correct answer is 4 because four positions match. If you have this. Thing that doesn't really solve the task, then reward is one. Because I think you got lucky and you  2 in the, you know, second position and you have this thing which also is not solving the problem. But, you know, you kind of look at this and say, well, it's really trying. And again, you get a 1 because the 0 is in the.
+
+说话人 2 35:27 
+Right position.
+
+说话人 1 35:29 
+Okay, so that's one reward you could use. Maybe you were kind of unhappy with this because you know, this is pretty far off and this is closer, but yet they're all getting reward one. So let's define an alternative reward that gives more partial credit. So what I'm gonna do here is I'm gonna give one point for each token in the prompt that shows up in the response. Okay, so at least.
+
+说话人 2 35:57 
+You, you know, output the tokens that are in their input.
+
+说话人 1 36:02 
+Not too much Saas, right? So for this particular example, I get a conclusion reward of 4, and then I'm gonna get one point for each adjacent pair in the response that's.
+
+说话人 2 36:13 
+Sorted.
+
+说话人 1 36:17 
+So that's a 3 because there's three pairs, adjacent pairs, and the reward is the sum. So that's.
+
+说话人 2 36:23 
+7.
+
+说话人 1 36:24 
+So if you're kind of paying attention, you realize that this reward is actually has a loophole in it, but I'll.
+
+说话人 2 36:32 
+Let you figure that one out.
+
+说话人 1 36:34 
+Okay, so now this particular very wrong answer, it gets a reward of 3 and this one gets a reward of 6 because it's really trying it's best. Then we give a lot of partial credit for our.
+
+说话人 2 36:48 
+Algorithms.
+
+说话人 1 36:51 
+Okay, so that's the task. And, you know, in general, we're gonna go with the second reward function. Okay, so the task is clear. That's an environment. So now let's define a model to solve this task. And so we're going to define a really simple model. We're going to assume the prompt and the response lengths are fixed.
+
+说话人 2 37:11 
+And.
+
+说话人 1 37:13 
+Of the same life. When I was trying to iterate on s examples, there was one I was doing some sort of, you know, dynamic thing and it was just like annoying to do.
+
+说话人 2 37:24 
+So.
+
+说话人 1 37:25 
+I've simplified it. I'm gonna try to capture positional information with separate per position parameters, because obviously position is the kind of the name of a game here or prison position matters for sorting obviously. And one thing I'm gonna do is decode each position in the response independently. So this is not our regressive model. I'm just gonna encode the sequence and I'm just gonna. I'll put all the tokens separately, not what you want to do generally in real life, except for, I guess in some speculative decoding. It can be helpful to do this in limited doses. But it makes the code a lot cleaner because this auto regressive generation, that's a part which was getting really hairy.
+
+说话人 1 38:08 
+So this file is simplified. Okay, so here's the model. So I have embedding matrix. I have for each position, I have a matrix for basically transforming the, for decoding and a matrix for, sorry, encoding and then decoding.
+
+说话人 1 38:30 
+Okay, so that'll be easier to explain as I look at the forward pass. Okay, so I start with a prompt. I'm gonna use this notation in general to denote the dimensions of the tensor here. So there's a batch dimension, which is a number of examples and number of prompts. And then the position dimension, which is obviously the position I'm in. So I'm going to generate responses. So this is inference. So let's walk through this. So just some, you know, terminology. So I have a batch size, which is the number of prompts here. Each prompt has a particular length, 3 number of responses per prompt. I'm gonna generate in this case, 2. And the response length is 4. In the sorting task, you know, this response length is going to be identical to the prompt plane. Okay, so first I'm going to pass the prompts through the model to get logics, which is gonna give me for each prompt and each position distribution over.
+
+说话人 2 39:44 
+Tokens.
+
+说话人 1 39:46 
+So what this looks like is I'm gonna embed the prompts into this dimensionality. Now I'm going to transform using the per prompt position matrix. I'm gonna call. Offset. So using, you know, and handsome, I have batch position dimension 1 and then this weight is curve every position I have this Dem 1 to Dem 2 transformation and I'm gonna end up with batch dim 2. Okay, so I've kind of summed out the position and in one, and then given that vector for each prompt, I'm going to for each position, apply this matrix and get back a vector. And then finally, given a vector for each position in prompt, I'm going to convert that into a logic over my.
+
+说话人 2 40:42 
+Vocabulary.
+
+说话人 1 40:44 
+Okay, so, you know, pretty, I mean, it's just kind of a, you know, simple model I made up. I don't know if it is actually any and useful, but anything useful, but it fit this sort of do.
+
+说话人 2 40:56 
+This toy example.
+
+说话人 1 40:58 
+Okay, so now I have logics and this is just kind of shenan against to deal with the fact that Torch Montanomio needs something flattened. So I'm going to essentially basically flatten this into a batch times position by vocab. I'm going to sample num responses and that's gonna give me batch position number of responses, which I'm gonna call trial is that dimension. And I'm gonna, you know, basically rearrange things to make it so that it's for every prompt, for every trial, I'm gonna get a sequence of examples. Okay, so maybe I'll pause just to check that everyone's, you know, with me. So this is nice because this is usually where you would call out to VLM, right? And do the inference. I'm just doing this here because it's like a very simple.
+
+说话人 2 41:59 
+Model and I can.
+
+说话人 1 42:00 
+Just, everything is just like matrix.
+
+说话人 2 42:01 
+Operations. Yeah, responses are going to be very close by, right?
+
+说话人 1 42:11 
+Fine. The responses are gonna be close by. So we're sampling num responses independently from that distribution. So they're definitely gonna be similar, but that would be the same as if you sample from a language model as.
+
+说话人 2 42:26 
+Well.
+
+说话人 1 42:27 
+The only difference between a language models is are regressive and this is.
+
+说话人 2 42:30 
+Independent. Basically, the point was, shall we change the.
+
+说话人 1 42:33 
+Temperature now? Basically, yeah, so you could change the temperature. You can do various things. I'm trying to be kind of faithful.
+
+说话人 2 42:42 
+To that, the algorithm.
+
+说话人 1 42:47 
+Okay, so I get my responses. I can compute a reward over all these responses. And this basically goes through and for every prompt in every response, I just call this reward function, which we looked at earlier. Nothing too interesting there.
+
+说话人 2 43:06 
+And sorry, this is.
+
+说话人 1 43:10 
+You know, a little bit long. Oh, no. Okay. Well, this part is gonna be far less interesting because I thought I fixed the random seed. This generally you want to know Bev more variance in the rewards. Anyway, so the rewards all happen to be 3. So this is gonna make some of this other stuff kind of less interesting, but none of us. I'll go through the computation.
+
+说话人 2 43:36 
+Here.
+
+说话人 1 43:40 
+So there's this function called compute deltas, which takes the rewards and converts them into the delta that I'm going to use for my.
+
+说话人 2 43:50 
+Updates.
+
+说话人 1 43:51 
+And the framework is there's many ways, many choices here, which some which you'll explore in your assignment. So for example, if you can just return delta equals the rewards, you can center the rewards. So you can compute the mean over all of the responses for each prompt. So this is what this is doing. And then you can just subtract off the mean that gives you center rewards. And to answer a question from earlier, this is where if your rewards look like one and a bunch of zeros, your average is gonna be like point, let's say point one, which means that if you subtract that now you're gonna end up with a bunch of minus ones and something that's slightly below 1. And therefore you're gonna perform updates on all those negative examples.
+
+说话人 2 44:49 
+As well.
+
+说话人 1 44:52 
+Okay, so that's century rewards. And then you can do this thing in GRPO where you normal. So you center the rewards and then you divide by the standard deviation and add something small so you don't divide by zero just in case and you.
+
+说话人 2 45:11 
+Return that. Okay.
+
+说话人 1 45:16 
+So one thing to notice is that what happens if all your rewards are 5.
+
+说话人 2 45:21 
+For example.
+
+说话人 1 45:23 
+So rewards is here is just gonna be 5. So you're gonna make a bunch of updates centered rewards is gonna be all zero, right? So that means you're not gonna make any updates. So this is kind of interesting to think about if you have an example where your policy is going, generating everything is the same reward, then you're actually not going to make any updates on that example. And the intuition, you know, it might or may not make sense depending on what you're trying to do, but the intuition is that there's no, you know, gradients and you're not, there's in terms of relative comparison between that group, there's no reason to favor any particular example more than an other one. So you're just gonna abstain and hope that some other examples give you some.
+
+说话人 2 46:10 
+Signal.
+
+说话人 1 46:13 
+And the normalization means that if all your rewards are, let's say, 10 versus all the rewards are, you know, if you multiply all rewards by 100, then the normalized rewards just kind of invariant to the scale of the reward. So I think that's a, you know.
+
+说话人 2 46:28 
+Good thing about that.
+
+说话人 1 46:30 
+Just for fun, there's another thing which the GRPO paper didn't do, but you know, you might think is kind of a cool thing to do. So you can zero out any reward that isn't the maximum for each batch.
+
+说话人 2 46:43 
+As well.
+
+说话人 1 46:46 
+So the idea here is that often in reinforce similarity, sometimes you really get into these local optimum where if you assign too much partial credit, then the policy is going to sort of latch onto that and go after the low hanging fruit instead of the kind of, you know, the thing that would give you more reward. So you could try to kind of just say, well, if it's not getting, you know, the maximum reward, then I just don't want that. It's kind of all or nothing thing.
+
+说话人 1 47:20 
+Okay, so far what we've done, we generate a bunch of responses, we compute rewards and these deltas, which allow me to provide the update. Now I need to look at the other piece, which is the log probabilities of the responses. Because remember in the gray policy gradient, I have delta times the grading of the log policy. So this part is also fairly, you know, straightforward. I pass this through the model, convert the logics into log probes.
+
+说话人 2 48:00 
+And.
+
+说话人 1 48:01 
+Then there's some shenanigans to because a prompt is doesn't his only batch pause and responses has a extra dimension in there. So I'm just gonna kind of upcast these log props to that higher, you know, tensor, dimensional tensor, and I'm gonna index, you.
+
+说话人 2 48:22 
+Know.
+
+说话人 1 48:23 
+Log probes using the responses. So the response is basically for every batch trial position specifies the index into log probes that I need to get. So this is batch trial pause vocab and this is batch.
+
+说话人 2 48:41 
+Trial.
+
+说话人 1 48:42 
+Pause with the index. And that will give me batch.
+
+说话人 2 48:45 
+Trial pause. Okay.
+
+说话人 1 48:49 
+So this gives me so logics that are returned by the model give me a distribution over all the vocabulary, position and prompt. And now I have log props for the particular responses. So these are lock props for these particular responses I got.
+
+说话人 1 49:08 
+Okay, so now we want to finally compute the loss and the loss is just going to be, and here there's another set of choices here. So all I'm trying to present this as kind of a menu of sorts. So the most naive thing is this is a naive policy gradient. You just take the deltas and the log probes and you just multiply them together.
+
+说话人 2 49:34 
+In average. Okay.
+
+说话人 1 49:38 
+So this is log problems. Remember batch trial, pause and deltas is batch trial. And this is because it's outcome reward. You only get, there's no position dependence on the delta. So basically every position gets, the deltas get broadcasted to every.
+
+说话人 2 49:56 
+Position.
+
+说话人 1 49:58 
+If you had process reward, then. This deltas would be kind of per position as well. Okay, so that's the naive thing just to kind of interlude to make sure that we can into this idea of freezing parameter. So later we'll see in GRPL, you see these kind of ratios, right? This kind of relates to this idea that you have a probability of action given fast and you're dividing by some kind of, you know.
+
+说话人 2 50:28 
+Other model.
+
+说话人 1 50:31 
+And it's really important that you can remember to freeze and not differentiate through Po. So just give you a kind of toy example. Suppose I have a single parameter w, and that drives both the probability, think about this as a policy, and also there's like a old value, which in this particular iteration is just the same thing. And now what happens if I compute the ratio and do a backward pass? What would the gradient be? So I'm dividing p by p old. So the ratio is gonna be 1 and the gradient of 1 is zero. So what are the. Okay, so it's zero, which is obviously not very helpful. So the way you do this properly is that you have your P as usual, and then anything you want to kind of treat as a constant, you put in, wrap in this no grad. And then this allows you to get the value of but not the whole computation graph and you just divide by that and now the gradient is not zero. Okay, so just like kind of be careful when you're, because in RL as opposed to when you're doing pre training, there's many different values that all, you know, depend on different either older, not.
+
+说话人 2 51:58 
+Old parameters. Yeah, this is not like an afternoon. Sorry, let me go back to the secret. So yeah, I guess that like the last under topics, not only first hundred.
+
+说话人 1 52:12 
+So the question is, why don't you discounts do some sort of discounting when you have outcome rewards. So, and maybe the last hundred tokens matter more than the first hundred tokens. I think that is less not so.
+
+说话人 2 52:30 
+Clear.
+
+说话人 1 52:31 
+I mean, certainly like the last tokens where you're generating the literally generate the answer is important. But I think the problem is that in reinforcement in general, you have to do credit assignment, right? There's certainly decisions early on that.
+
+说话人 2 52:43 
+Matter.
+
+说话人 1 52:44 
+In fact, they might even matter more than what you get because if you basically have the right strategy, then the stuff that happens at the end maybe just follows out. And the hard part in reinforcement learning is that you don't know where to do the credit assignment, especially when you have a sparse reward. So I think in this setting, we're just gonna smear the credit all over or the.
+
+说话人 2 53:07 
+Blame all over the place.
+
+说话人 1 53:13 
+Okay, so with that kind of interlude, so this is important for computing the GRPO loss. So imagine we have an old model, okay, with all this, so this is all checkpoint. And using this old model, we're going to compute the log probabilities of the responses. So that gives us the old log probabilities. And now let me just skip the unclipped version. So this is the GRPO loss. Okay, so let's step through it. So it's the clip version. So you look at the log probes and you divide by the old log problems, which remember should be a constant. Actually, I sort of didn't follow my own advice. I don't think I wrapped the old log props in with no grad. But anyway, you know how to do that. So you look at this ratio and then that ratio gets multiplied.
+
+说话人 2 54:17 
+By delta.
+
+说话人 1 54:20 
+Okay? And, and so if you contrast with the naive thing, you're just multiplying log probs times delta. So this is basically the same thing except for I've divided by old log project, which is constant. So, you know, the, I'm just scaling the gradient, but now there's another part, which is I'm clipping. And the reason I compute this ratios in the first place is that I'm going to clip the gradients between 1 minus epsilon and 1+ epsilon. So this is to make sure that the ratios don't go too out of whack. And I'm going to also multiply these clip ratios by delta. And I'm gonna take the minimum and you'll return. And there's a negative sign because I'm talking about rewards and convert that into a loss.
+
+说话人 1 55:10 
+Okay, so this is just following the kind of the math in the, you know, GR, GR paper and in the assignment, you'll see this kind of explanation of why this makes sense. So if your updates are within the, you know, the clipping range, then you just get the kind of the standard, you know, update. But if you sort of your ratio is outside, then your, your, the magnitude of your updates are gonna be bounded by 1 minus epsilon and 1+ epsilon.
+
+说话人 1 55:51 
+Okay, so there's also this KL penalty, which provides additional.
+
+说话人 2 55:57 
+Regularization.
+
+说话人 1 56:00 
+And so, so the just a kind of a quick, you know, little math exercise here. So remember the definition of kale between two distributions. It's your sample from the first left distribution and it's log over the left over the right. Rewrite that as you know Q over p with a negative sign. And then so so if you're doing, you know, KL a penalty, you could just, you know, use this directly, right? But there's this. And if you wanna estimate the KL, you can just take strip out the expectation and you get a unbiased estimate. It turns out that this particular estimate can have, you know, lower variance where you just do q over p minus the log minus 1. So it looks a little bit weird, but you can so check that this is identical. Everything is equal because expectation Q over P is just 1. So this part is just 1 and you subtract 1, which is.
+
+说话人 2 57:09 
+0.
+
+说话人 1 57:10 
+So you're just left with this original.
+
+说话人 2 57:12 
+Term.
+
+说话人 1 57:13 
+So the math works out and the inside just gives you a better estimate of the KL than doing this, a kind of naive thing. So a lot of kind of cases when you're trying to find these estimates of the expectation, you're just trying to find an unbiased or sometimes even biased estimate that has lower variance than just doing the naive thing. So you kind of try to rewrite the inside to so that it reduces.
+
+说话人 2 57:43 
+The variance.
+
+说话人 1 57:44 
+Okay, so just a quick implementation of the kale penalty. This is pretty, you know, straightforward. Anything you have to pay attention as you're summing over the last dimension, but taking a mean. So you're summing over the vocab, but you're taking a mean over batch, try trial and position.
+
+说话人 1 58:06 
+Okay, so just to kind of summarize the so far, the components that are needed to introduce the actual algorithm, you generate the responses given a particular fix model. From the responses, you compute the rewards and you know the deltas. And in the case of GRPO and friends, these don't depend on the model. It's just like a function of the, you know, responses and in, you know, if you think about kind of architecting this system, sometimes a reward is very simple. It's just like a one liner exact match. Sometimes a reward will involve like an agent, like executing an environment and doing all sorts of crazy things. So this could be, you know, expensive or cheap operation, but it's independent of the actual model. Unless you have like LMS, a judge, which case that's another model.
+
+说话人 1 59:03 
+Simultaneously, you can compute the log probs of the responses. And then you compute the loss from the log probes and you know the deltas that you got here. And you combine them, either clip or not clip or you normalize or you, I'm sorry, that's up here. So you either clip or don't clip and then you take a gradient, you know, step.
+
+说话人 1 59:33 
+Okay, so let's try to put this all together. So this is the full algorithm, which is essentially implementation of what's in here in code. So there's some boiler plate I'll just skip over. So I'm gonna define, you know, some trivial data set here, three prompts of length 3 each. And then define the.
+
+说话人 1 01:00:00 
+Model optimizer. And then I have this, there's multiple loops here. And you know, GRPL, Po. So there's an outer EPOK loop. And here, if I'm doing it, sometimes if I'm using the doing a kale penalty, then I'm going to kind of freeze the model and have that as a reference so I can regulates towards that. And then otherwise I sample the responses. So we talked about this, we compute the rewards, you compute the deltas, depending on, you know, what variant flavor you like. And if you're doing the, you know, the kale penalty, then you also need, you know, to compute the log props under the reference.
+
+说话人 2 01:00:57 
+Model.
+
+说话人 1 01:00:59 
+And if you're doing not the, if you're doing some sort of clipping, then you need.
+
+说话人 2 01:01:08 
+To.
+
+说话人 1 01:01:10 
+Compute also the log props under, you know, the old, you know, the current model. And then you take a number of steps given the responses. So the idea here is that, you know, often response, remember, inference is expensive. You generate and you want to do a bunch of gradient steps with respect to the responses. Okay, so this inner loop is basically taking a bunch of steps with respect to the same set of responses. And if you do that, you compute the log probes, you compute the loss. If you want, you can add a KL penalty, which sometimes helps, sometimes doesn't really make a difference. And then you just optimize. Okay, so that.
+
+说话人 2 01:02:03 
+Is.
+
+说话人 1 01:02:05 
+Yeah, maybe I'll stop and ask, answer any questions.
+
+说话人 2 01:02:08 
+People have.
+
+说话人 1 01:02:09 
+About the setup here. So the big picture is that you have the outer iteration, which you ignoring the kale penalty because that's there's another ring call mentioned later. So you generate a bunch of responses and then you quickly do a bunch of iterations on them. And you generate a bunch of responses and do some iterations. That's kind of the basic idea. Now there's an additional thing, which if you have a kale penalty, then you actually regularly towards a reference model, which is changing even slower than this outside.
+
+说话人 2 01:02:49 
+Model.
+
+说话人 1 01:02:50 
+So the way this is written is actually slightly different than the grpr code. In the code, you actually have three loops. I only have two because I'm sort of just updating the reference model, you know, you know, it's a little bit kind of infrequently. And I'm also not doing, you know, this part. Okay, so there's a few implementation details, but hopefully you could kind of get the rough shape of what this looks like. So you actually have kind of three models. You have the reference model that you're doing kale regularization against. And then you have the old model, which you're using to compute these like kind of importance ratios between the current model and the old model, which you're also freezing and then you're, you know, kind of.
+
+说话人 2 01:03:41 
+Updating.
+
+说话人 1 01:03:43 
+You know, the current model.
+
+说话人 2 01:03:45 
+Online.
+
+说话人 1 01:03:46 
+So one kind of annoying thing about the reference model is that you actually have to store a whole copy of the model, which is can be, you know, just doubles your.
+
+说话人 2 01:03:58 
+Memory.
+
+说话人 1 01:03:59 
+The old model is actually a little bit, you know, better because you just remember if in the code, you actually don't have to copy the old model, you can just generate a bunch of responses and compute the log probes on those responses and just store the log probabilities because those are going to be, you're dealing with the same responses in the inner loop. So you don't have to store a whole copy of the model. You just have to store the log props.
+
+说话人 2 01:04:34 
+Okay, question. Seeing that it is quality instead of doing it.
+
+说话人 1 01:04:42 
+So question is, why don't you do the kale penalty against the old instead of the.
+
+说话人 2 01:04:49 
+Reference.
+
+说话人 1 01:04:52 
+The way to think about this is.
+
+说话人 2 01:04:54 
+That you. Let's see. So.
+
+说话人 1 01:05:02 
+Remember how we said we define objective function in reinforcement learning and we optimize that? It's sort of a little bit of a lie because really you just define the subjective function so you can compute a gradient and the gradient you compute and you update for a while, but then your kind of objective function changes, right? So really, you can think about, let's say, so this point, you fix a reference model, and then you write down this nice subjective function, which is, let's see if I don't have the full expression here, but you know, the expected reward with all the, you know, the expect reward and then the KL, you know, penalty. So if you change that too quickly, then it's, I guess the more you change that, then the less you're actually like optimizing that objective function. So that's, I guess, maybe one kind of reason. I mean, honestly, I think, you know, empirically, you know, you, it's sort of a gradient because depending on how you how many steps you take here and how often you can make it either more like pilot or less.
+
+说话人 2 01:06:31 
+Like pile.
+
+说话人 1 01:06:34 
+I mean, you sort of have two kind of mechanisms for regularization. One is the clipping thing, which is applied to pile and then the KL which is applied to pi ref.
+
+说话人 2 01:06:45 
+Okay. Yeah, question? Pure Po for the most inner loop, is it high data, old people that high data, is it like wasteful.
+
+说话人 1 01:06:57 
+To do that? So the first iteration pi all is equal to.
+
+说话人 2 01:07:01 
+Pi theta. Yeah, so.
+
+说话人 1 01:07:03 
+You're essentially going to, well, you're still performing an update. You're just scaling by some, remember pi. All of this from the point of view of adopt is just.
+
+说话人 2 01:07:14 
+A constant.
+
+说话人 1 01:07:16 
+And I guess the point and the only thing that matters is that you're not gonna get clicked because the ratio is 1. So you're just gonna guarantee to make.
+
+说话人 2 01:07:26 
+Update. So yeah, it's.
+
+说话人 1 01:07:29 
+Fine. Okay, so maybe just kind of round this out a bit. So actually, so I'm ran some experiments. So you run the same piece of code that I presented. I'm gonna do 100 Epox. Number of steps for epockets is 10. And we see this kind of learning curve. So just to maybe walk through what this is doing. So on epoch 0, step 0, we have this prompt, the responses. It generates a bunch of stuff. You score them, you compute the reward, and then you compute the, you know, the delta. In this case, it's identical as a reward. So I'm going to update towards the threes a little bit more than, you know.
+
+说话人 2 01:08:21 
+The twos.
+
+说话人 1 01:08:23 
+And then you see, you know, this prompt, you know, kind of the same thing. This one, I'm still gonna update against all these towards these responses, even though they all have reward 3. And then let me scroll down and see what happens. You know, eventually you see that I'm getting reward 3.
+
+说话人 1 01:08:54 
+But, you know, this is not, you know, looking, I mean, it's not really sorting is as short answer. It's I, it's producing numbers which are sort of more or less in the prompt, but not really. Sorry, let's see if it, how it does at the end. So it's not terribly great. I actually haven't looked at the other example, so I'll be exciting to see what happens.
+
+说话人 2 01:09:23 
+Here.
+
+说话人 1 01:09:25 
+So here we're using the center rewards and see the main reward is getting higher. So it's like, you know, past 3 instead of 2, which is promising. So let's look at this run. So notice here that I generate some examples. Reward is 2 and 3. But because I'm centering, I'm sort of giving for pushing them all towards the ones with reward 3 and away from the ones I have reward 2. So this is. Is what centering is doing. And if there, you know, all the same, then centering doesn't really is actually gonna be a no up. Whereas before I was performing updates, which is kind of silly, I think, because if you think about it, I'm sorting 1,2,3, and here all the responses are, you know, equally bad. So updating towards this, these don't really maybe make as much.
+
+说话人 2 01:10:28 
+Sense.
+
+说话人 1 01:10:29 
+Let's see towards the end how this.
+
+说话人 2 01:10:31 
+Does.
+
+说话人 1 01:10:34 
+So still not, I guess it's not great, but it's got a little bit higher reward. So we need to tune this a little bit more, but at least it's getting, you know, reward 4 here for getting the right numbers. And 0,1 is, you know, it's not the most unsorted. Here I'm, I think it's sort of getting the permutation right. And here I think it just got stuck. And at this point, you see all the deltas are zero. So like more training isn't really going to help on this batch. But if you regenerate, maybe you'll get some fresh samples and be able to.
+
+说话人 2 01:11:13 
+Update.
+
+说话人 1 01:11:14 
+So you can see this kind of like the partial reward is sort of a double edged sword, right? Because I'm giving you four points. So it's like, it's, you know, it's good reward, but I still didn't solve the problem, you know.
+
+说话人 2 01:11:29 
+Completely.
+
+说话人 1 01:11:30 
+So I think you have to be careful with a, you know, reward, dictionary reward. And then finally, the standardize, I think the normalization here did enjoy do all that much. So I'm gonna skip it.
+
+说话人 1 01:11:44 
+One thing to I think note is that if you look at these loss curves and you think, well, this looks kind of good, but why is this like looks pretty bad, even though the reward is going up? And this is going back to kind of my statement that minimizing the loss is a little bit of a lie here. It's not like we were minimizing one loss function that you can measure over time because the set of responses is changing overtime, you don't have really kind of a reference point for the same loss. I mean, you can measure loss on some, maybe some validation set. But if you only have rewards, then you're sort of back to only being able to rely on reward. Because even think about it, even if you.
+
+说话人 2 01:12:35 
+Have.
+
+说话人 1 01:12:37 
+A bunch of examples where you're, the model is just happy generating them. It's sort of like the loss is only respect to what the model is generating. So it's kind of a self circular thing. So monitoring the losses not really kind of so such a meaningful thing to do. Okay, so maybe just to wrap up here. So, you know, reinforcement learning just popping back up.
+
+说话人 1 01:13:05 
+I think it's really exciting because it's really, I think, the key to making models that actually, you know, surpass, you know, human abilities in some sense, because label data is only going to get you as far as mimicking the behavior that's presented in the label data.
+
+说话人 1 01:13:24 
+You know, I think the model is if you can measure it, you can optimize it. If you have a reward. I think there's, you know, optimization as we've seen even with us sorting examples, I mean, is can be challenging in itself, but there's also a perhaps a bigger problem is, you know, how do you design rewards that are not hackable in environments that are, you know, generalizable? I think that's a pretty active area investigation for the optimization part. I mean, you know, the sorting isn't that hard. I think I just ran it for like 20 seconds on my laptop. So you don't, you shouldn't expect greatness. I think, you know, just review the policy gradient framework, I think is conceptually clear. You write down the expected reward, you subtract the baseline, the same thing, and then.
+
+说话人 2 01:14:14 
+You just.
+
+说话人 1 01:14:15 
+You know, taken as you try to find a, you know, estimate of that reward or.
+
+说话人 2 01:14:23 
+Advantage.
+
+说话人 1 01:14:24 
+And that's one thing that we didn't talk about, which I think is actually important and maybe next year I should try to do a bit more of this, is that building our own systems and scaling is actually much more complicated than, you know, pre training. And the reason is that you have to do inference and inferences its own kind of worms. You also have to manage multiple models. So you have the policy, you're training, you have, if you have PPO, then you have the critic. If you have, you know, the inference, and you have maybe. Inference worker, then you need to ship the model over there to run the inference. If you have like an agent environment, you have like the environment which requires spinning up and then on top of that, you also have like the Pi Old and Pi Ref. So you have multiple models that you need to keep around. And on top of that, you have to do everything kind of in parallel and distributed and make it all sing and dance. So there's a lot to be done there, which, you know, we're not really gonna have time to talk about in this class. But if you're interested, you know, there's definitely pointers I can send you to. Alright, so that's it and see.
+
+说话人 2 01:15:36 
+You next time.
+

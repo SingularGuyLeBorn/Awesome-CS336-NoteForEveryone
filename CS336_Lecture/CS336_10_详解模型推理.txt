@@ -1,0 +1,342 @@
+2025年7月14日 下午 10:14|1小时 22分钟 38秒
+
+关键词:
+different times、generation models、same model、model dimension、model architectures、big model、new model、good model、train model、layers times、large models、weight models、inferences memory、draft model、particular model、b model、parameter models、target model
+
+文字记录:
+说话人 1 00:00 
+So the question is, inference is a very simple one, given a fixed model that we've trained, generate responses, given prompts. Okay, first we're going to start by understanding what the implications of inference are and the workload that it entails. And then we're gonna talk about ways of making inference faster. And throughout this lecture, you're gonna see that there's a lot of inference is a very deep topic is actually the, we didn't do inference last year in lecture. So this is the first year we're doing it, but there's actually many topics that could spend multiple lectures, which I'll try to condense into one. So inference shows up in multiple different places. The most obvious place is if you actually want to use a model, you want to use it to chat, you're using cursor or something to do code completion. If you're running batch, a data processing job using your language model, all of these cases demand inference because you need to generate tokens from your actual model. But it also shows up in other context if you want to even evaluate your model, as I say, on instruction following, you need to do inference. There is a lot of interest and test time compute, which means thinking more before you actually output some the final answer. And that's also more inference because thinking is basically generate tokens. And then finally, even training itself, if you're using reinforcement learning, you need to sample responses and then to evaluate them based on some reward. And that also requires inference.
+
+说话人 1 01:41 
+So inference isn't just, I want to put up a chatbot demo. Inference actually is going to underlie many of the basic functions of a language model. And even though it's one lecture, I wanna stress how actually important it is for many things. And we'll probably come back to this when we talk about an alignment later in the class. So now inference is important. So the theme of this class is efficiency. And efficiency clearly matters. Training is a one time cost, but inference you repeat multiple times. So here's some, you know, anecdotal stats on why inference is a big deal. So Sam says opening eye generates 100 billion words a day, which is quite a lot. And even cursor, which is not that new of a product, is allegedly generating 1 billion lines of accepted code each day. So it's just give you an idea of how much inference is accounting for and, you know, cost of inference compared to training are definitely, you know, increasing.
+
+说话人 1 02:52 
+So how do you measure what inference, good inference looks like? So there's time to first token TTFT. So this is how long a user, an individual user needs to wait before any generation happens at all. And this matters clearly for interactive applications. If you have a big prompt and then you have to wait there for 10 seconds, that may not be a good user experience. Latency is how fast tokens are arriving after maybe the first token. This also matters for interactive applications. Throughput is something a bit different. Throughput is how many tokens in general are generated per, not for overall users. So this is particularly useful in batch processing applications. So you can think about the throughput is high fluid doesn't mean low latency because some, you know, requests might just take a very long time and you still have high throughput. Latency is kind of like the, you know, worst case over any of your user.
+
+说话人 1 03:54 
+So what do you need to think about when you think about the efficiency of inference? So in training, the key idea is that you get to see all the tokens, at least a supervise training, which means that you can paralyze over the sequence. This is exploited heavily in the transformer, right? So you've done the transformer training, you know that you basically construct these tensors over the entire sequence. And it's just like tensor, you know, mammals, and then you get your output.
+
+说话人 1 04:25 
+But the key defining feature of inference, at least for transformers, is that you have to generate sequentially. You can't paralyze because the generation of a token depends on all of the past. So this is gonna be the key thing that's gonna make influence a lot harder. And in particular, it's gonna be harder to utilize all the compute that's available. And it's gonna be memory limited as well. See in detail later.
+
+说话人 1 04:53 
+So a lot of people are doing inference. Anyone who's actually has a product and platform quickly realizes that. These cost in doing large models is gonna go up, so they spend a lot of time and, you know, engineering effort trying to reduce that time. So both provider serving closed models and provider serving open water may open weight models pay a lot of attention to inference more so that I think the average academic, because we're not actually serving any models, we're just training and getting a score and putting in the paper. But people who are actually serving models pay a lot of attention to inference. So there's also a bunch of open source packages which are interesting to look at as well.
+
+说话人 1 05:39 
+Okay, so I want to understand the inference workload kind of in detail. So I'm gonna review briefly to sort of this transformer math that we, you did in Assignment 1, and we talked a little bit about it during the first week of class. So this is from the scaling jacksonnel book, which is something you guys should really take a look at. I think it does an excellent job of outlining many of the key concepts here. And they have this a really nice diagram that shows essentially the computation graph taken in input and having it go through attention and the MLP layers in particular, we're gonna use this notation. So just to kind of review this quickly. So B is the number of sequences in your batch, L is the number of layers, t is the sequence length. You can think about as the number of tokens you're going to generate or query using. S is also the sequence length, but how many your kind of conditioning on in your prompt VS. A vocabulary. D is the measurement of your model. F is the MLP hidden dimension, which is usually 4 times d. H is a attention head dimension. N is the number of query heads, or generally n times h equals d. And then in gqa group query attention, you have a different number of key value heads as query heads. User k is smaller than n and G is a number of groups. So k times g equals n.
+
+说话人 1 07:22 
+Okay, and this diagram shows that you take your x, you feed through the q KV matrices, and you do a bunch of things. Okay. So remember that the flops required for a fee for pass is 6 times the number of tokens, which is B times times the number of parameters. Plus for the attention, there's another order t. So t times TST squared dependence.
+
+说话人 1 07:58 
+Okay, so let's also review arithmetic and intensity, which is going to help us characterize when something is compute limited versus memory limited. So just to start with the basic, you know, map mall. So let's take a matrix X, which is B by B by d, and a matrix W, d by F. And, you know, just to give some color to this computation is the batch size, the hidden dimension, and f is the upper projection matrix in the gated MLP. So let's do count the number of flops and memory reading writes for just doing X times w. Okay, so we can start with initializing 0. And what one has to do for this is we're going to read X from HPM. So you, that means it incurs a memory cost of 2 times b times d, assuming everything is in BF16. You also read W. So that's 2 times d times F. Then you do the map mall and that incurs 2 times B times d times F flops.
+
+说话人 1 09:14 
+So remember this is from the first lectures. Hopefully this is review and then you have to write it back out, which is you have to pay another transfer. Okay, so the total number of flops is just the mammal, and the number of bytes transferred is essentially the size of all the matrices that are read and written. And arithmetic intensity is basically the ratio. So the ratio is this expression. And in general, just to simplify things a bit, generally the batch size is much less than d and f. B maybe, you know, hundreds and a DNF might be, you know, thousands or tens of thousands. So I'm using Simbi here. Urge us just to keep myself from making silly mistakes. So basically I'm letting C go to infinity and d scales as C times B and F scales as C times B. And that gets you a simplified equation of b. Okay, so the arithmetic intensity is B for this particular matrix multiplication. And okay, so the way to interpret this is how many flops are done per byte that was transferred.
+
+说话人 1 10:39 
+So now the second part is you look at the accelerator, which for H 1 hundred flops per second is UM98989 teraflops memory bandwidth 3.3 turf bytes per second. And you divide and that gives you what is called the accelerator intensity. And if you look at the computation intensity, which is B, if it's greater than accelerated intensity, that means you're compute limited. That means you're able to use all the GPUs or TPUs. And if you're less than that, then your memory limited, which is, you know, bad. And so your compute limited in this matrix multiplication case, if B is greater than 295 for H1 hundred and all of this is a bit idealized, the actual details there's, it's if this is giving you a kind of a first order approximation. So in extreme case, so generally if you, that means if you use batches of size, let's say 300, then you'll be gonna be able to saturate the GPU. But what happens if your batch is really small? So in particular, b equals 1, which essentially corresponds to a matrix vector product, then the arithmetic intensity is basically one. And that is really bad. That means you're going to be memory limited. And which kind of makes sense because basically you're reading and writing this d times, or actually you're just reading this d times F matrix and you're performing essentially in the same number of flops, right? So the ratio between the flops and the reads is the same, which is gives you 1 and one is bad. You want a lot of flops be done for any memory read because memory reads are slow. But this is in essence what happens with generation, right? Because you're proceeding token by token, we'll see that basically your arithmetic intensity is going to be like 1. And that's why generations can be memory limited and not compute limited. Okay, so this is a very simple example that I think gets at the core of why generation is going to slow. So maybe I'll pause and take any questions on this just to make sure everyone's clear.
+
+说话人 2 13:00 
+Yeah, I mean, when do you influence, why don't you have a bad sense of, say, larger than money?
+
+说话人 1 13:06 
+So I think I heard the question, why don't we have a batch size more than one? So I'll get to why you can. But there's batch size is gonna mean batch size time sequence length later.
+
+说话人 1 13:23 
+Okay, so in summary, matrix multiplications are the kind of the core computation. So we just studied a matrix multiplication and counted the number of flops it requires over the number of region rights.
+
+说话人 1 13:39 
+And we show that ratio, which is arithmetic intensity, depends on one of the dimensions in case, in this case, the batch dimension. And that's why big matrices are good because that can saturate your computer. Whereas if you have even a thin matrix, B equals 1, that's really bad because you're spending a lot of time reading from memory and not doing that much compute. Okay, so now let's talk about the arithmetic intensity of inference. Okay, so let's just kind of get more into the weeds of what inference looks like.
+
+说话人 1 14:20 
+So, so the naive thing you can imagine doing, and all these nice pictures are taken from this book, is that you have a transformer, you give them prompt in you gives you logics over the vocabulary of the next token. You just sample from that. And then once you get that, you attach it to the prompt.
+
+说话人 1 14:45 
+And then you speed it through the transformer and you look at the logic sample again and you repeat, right? So that's the sort of most naive thing to do. And you know the complexity. Here is pretty bad because each token you generate is like n squared or t squared, you know, computation through the transformer. Okay, so that's no good. But if you look at this closely, you'll notice that you're doing a lot of redundant work, right?
+
+说话人 1 15:23 
+All of these, the work in compute, basically encoding the prefix basically stays the same. So this is for a for bi directional transformer will be different, but at least for auto aggressive causal transformer, it is the case that you should be able to share a lot between prefixes.
+
+说话人 1 15:47 
+And so the solution is you cache and you cache in the hibem HPM because that's where you have enough space to store stuff. So this is what looks like if you have a KV cache in schematically.
+
+说话人 1 16:02 
+So you take your prompt, the prefill step is you feed it through the transformer and you compute this KV cache, and then you generate the logics over the next token. And then you put that into, you know, take that generated token and the cash, and then you can feed it through the transform. But you've already computed these. So you don't have to do that again. You just need to compute this new KV vector for this token. And now that allows you to more quickly generate the next token and so on. So basically you're filling up this KV cache, which corresponds to the tokens that you've either prefilled with or that you've generated so far. Okay, so instead of t squared per token, it's going to be more like t.
+
+说话人 1 16:57 
+Okay, so concretely, the KV caches for every sequence in your batch, for every token in your sequence, for every layer of the transformer, for every head, you're gonna store an h dimensional vector. So you might think that this is gonna take a lot of memory and you wouldn't be wrong. Okay, so there's two stages of inference. So prefill is you're given your prompt encoded in a vector. So this is just like what you do in training. It's paralyzable, it's fast, your compute limited, life is good. And then you're doing generation, which is you're generating response tokens one by one sequentially. And this is a part that's going to give us a lot of trouble in terms of efficiency.
+
+说话人 1 17:38 
+So now let's compute the flops and memory Io for both for the transformer. So we're going to break it down into MLP layers and the tension layers.
+
+说话人 1 17:47 
+And just for notation wise, we're gonna do this computation with us being the number of tokens where conditioning on think about the length of the prompt and t is a number of tokens where generating or are acquiring using and in prefill, t is going to be s because we're sort of, I mean, we're not generating TT tokens, but we're sort of like querying using each of these tokens and a generation where t is just one. Okay, so hopefully the matrix multiplication is so fresh in your head because this is going to be essentially that, but a little bit more complicated because it's a transformer. So we're gonna count the flops and bytes generated. So first we're gonna take X, which is a, B by t by d matrix. I think maybe these t should be SS. But anyway, so, so that involves doing a bunch of transfers.
+
+说话人 1 18:55 
+Basically the size of that matrix times two because bf 16, then there's the Three Way matrices, the up projection, the gate and the down projection. They're all the same, you know, number size up to trans position. So you need to transfer those, then you do the, you know, up projection. That's some number of flops. So B times d times C times F.
+
+说话人 1 19:24 
+So whenever you multiply, you know, two tensors, basically a contracting dimension only gets counted once. Whereas other dimensions you just, you know, kind of gather together. You need to write it out. You also have the gate, which is this same thing. You write it out, you compute your non linearity, you multiply some stuff in your down project and that's a B times t times d times F, which is basically the same number of flops. And you write out the.
+
+说话人 1 20:00 
+Result. Okay, so if you look at the counting, I guess maybe I'll just, you know, you can check the, you know, results. Actually, you don't need to check it because this is simply, and it's a guarantee to be, you know, correct. So, but again, we're gonna assume that B times d is much smaller than d and N F. And we get that the intensity is B times t. Okay, so this is analogous to the matrix multiplication case where the arithmetic intensity, which we want to be high, depends on how large your batches and how many tokens you're essentially generating. Okay, so now if you look at the two stages, prefill life is good, remember, because we can just make BT large enough.
+
+说话人 1 20:49 
+You use a batch size, even a batch size of one actually is maybe okay if you have long enough sequence. So that's not a problem. Now, generation, this is where it becomes a little bit harder because you're genuine one token at a time. So t is one, right? So if t is 1, that means for BT to be large, you need b to be large.
+
+说话人 1 21:13 
+And b is essentially the number of concurrent requests. Okay, so this is kind of interesting because your sort of efficiency depends on having large batches because I mean, intuitively, it makes sense if you can take a lot of request fashion together, then you can get, you know, better efficiency, at least throughput. But this also depends on what B is, because if it's, you're only getting a few requests at a time, then you're not going to be able to use your hardware very efficiently. And this is talks, speaks to the sort of a very dynamic aspect of inference, which we'll come back to later in the lecture. Okay, so now what about attention?
+
+说话人 1 21:59 
+Turns out attention is even worse for reasons I'll try to get into. So let's do accounting flops, bytes transferred. Okay, so I'm gonna read the qkv matrices from HPM.
+
+说话人 1 22:19 
+I'm going to compute the attention, which is a matrix which is q times k and the cough number of flops is B times s times t times d. So remember s and t are the same during our prefill. So that's your sequence line squared times B times d. And then I'm sort of only looking at the metrics multiplications because the flops from other steps don't really matter. And then you project out to your, oh, sorry, you take a combination of this and v. So actually this is mathematically incorrect because there's some soft maxes there.
+
+说话人 1 22:59 
+But the essence of the map malls are the same. So that's the same number of flops. And then you write to HPM. Okay, so, and here I'm assuming there will be more bytes transferred if you didn't use flash attention means that you don't have to keep on writing back to HPM intermediate steps. So, but the order is actually not really affected. So qualitatively, doesn't really matter whether you use flash attention or not, but the math here depends on the constants matter. But let's look at the flops and the bytes transfer.
+
+说话人 1 23:40 
+And if you divide and simplify, you get this rather nice expression. I mean, nice in that it's simple, not nice in that it's a, it's good efficiency, which is s times t divide by S+ t. Okay, so let's try to interpret this a bit. So in pre fill t equals, so that means your prefill intensity is order. So that's good, right?
+
+说话人 1 24:10 
+Because as long as you have long enough, you know, sequences, then you're, you know, good to go, right? And generally the sequences can you assume are kind of long enough during generation.
+
+说话人 1 24:24 
+However, you'll see that the intensity is essentially 1 s over s plus 1, but that's basically one. And remember, one is really bad. Okay, so but notice like what there's no dependence on B at all. So unlike an mlps, remember an mlps, the generation, the prefill was BT, which is great, and then aromega intensity was B, which was not. Great because it depends on the whims of your users and workloads, but still could be larger than one.
+
+说话人 1 25:06 
+Whereas for attention, it's actually just always less than one, no matter how many, how long your sequences are, how bad, how many users there are, it's always one. So why is this intuitively that there's no dependence on B, the batch dimension? So the reason is that in the MLP layers, intuitively, every sequence hits the same MLP weights. So whereas in the tension layer, each sequence has its own KV cash, right? Because the K KV cache is sequence specific, which means that you can't really, you know, use in MMP case, you can kind of read all the weights and then you process a batch intuitively.
+
+说话人 1 25:56 
+Whereas in an attention case, every sequence kind of requires additional memory. You don't get any kind of savings. If you kind of batch them up mathematically, I guess you can look at it through here where the number of flops, there's a b here, which is expected, but the number of bytes transferred is, you know, B times, there's a scaling in B. So when you divide that B cancels. Whereas over here, there is a b here, but we're assuming that df dominates. So when you divide, basically, there's no b essentially left in the denominator. So you can look at it mathematically or you can just kind of reason about it intuitively. As during for the attention, the KV cache is sort of every sequence of zone Unix snowflake.
+
+说话人 1 26:57 
+Okay, so the summary is prefill is compute limited, where its generation is memory limited. The MLP arithmetic intensity is b, which to make good enough, you need a bunch of concurrent requests. But attention intensity is one, which, and it's also impossible to improve that. Okay, I'll pause a bit for any questions. Okay, so let's move on. So now we know that inference is due thanks to generation is memory limited.
+
+说话人 1 27:34 
+Let's try to study the throughput and latency, at least in theory. So let's focus on, let's see, actually. Okay, so we're going to make some assumptions. So all of this is sort of napkin math is a little bit stylized, but it gives you roughly the right kind of scaling and the right way to think about things. So we're gonna assume that commune, communication and compute can be perfectly overlapped, which is obviously false, but it's good enough for making these qualitative estimates. So what we're gonna do is we're gonna instantiate the latency and throughput for Alama 2,30 b on H100. Okay, so for a 13 b, here are the values.
+
+说话人 1 28:31 
+So the sequence, let's just put the sequence length to be 1,000, hidden dimension to be, model dimension to be 5,000 four times action. I don't know if that's not 4 times, but anyway, F is some multiple of that number of heads, number of key value have, I guess query has a number of key value heads, which for Lama 2 is the same. We'll get to that point later and so on. And for the memory bandwidth of H100, that's the number.
+
+说话人 1 29:01 
+Okay, so that's the config and we're gonna compute the memory lancy and throughput. Okay, so, oh, okay. So first let's just quickly get the number of parameters. You guys did this in an assignment one, so I won't be labor this, but it's some expression that depends on all the different, you know, you know, variables and the to store the parameters we're gonna use f BF16 because inference is generally gonna be 16 bit, not 32 bit. So we're gonna multiply two.
+
+说话人 1 29:45 
+So that's the memory that the parameters take. Okay, we don't need gradients, we don't need optimizer states because we're not training. But we do have to store the KV cache, which are the act sub.
+
+说话人 1 30:00 
+Some of the activations, not all the activations, but some of them for every sequence of length s. And how much do we have to per store per sequence is basically the sequence lengths times the number of key value heads times of dimension of that head times the number of layers times basically two for basically both the key and the value and two for Bf 16. Okay, so that's how much the cache size takes. And so the total memory is batch size times the cash per sequence plus the memories plus the parameter size.
+
+说话人 1 30:42 
+So now latency, it's going to be determined by memory aisle. Remember, it's memory limited. So we're just gonna compute how much memory needs to be transferred into the GPU to do this computation is simply memory over the memory bandwidth. And throughput is essentially the inverse of latency, but scaled up by B because we're looking at generating B tokens in parallel.
+
+说话人 1 31:12 
+Okay, so now if we substitute our llama 2 config, we'll see that the number of parameters checks out. It's, you know, 13 billion, roughly. The memory latency and throughput have these expressions. So memory, you know, grows, obviously, this is the parameter size. This is the key value, cache size times B.
+
+说话人 1 31:40 
+Latency also goes up as a function of B. Throughput increases, but you'll see that it increases up to a point. The B shows up in both the numerator and the denominator. So there's limits to how much you can stretch throughput, even if you could fit everything in memory.
+
+说话人 1 31:56 
+Okay, so those are the expressions for latency, throughput, and memory for this particular model. So now let's instantiate with different batch sizes. So if B equals 1, then the latency is about 8 milliseconds. So 8 Mills. Every 8 milliseconds, you generate a token and the throughput is 124 tokens per second.
+
+说话人 1 32:25 
+Okay, so that's a 13B on a H100 if you're using batch size of 1. So now what happens if you use batch size of 16? So you'll see that the memory usage increases because you need to store the KV cache for all 64 sequences. Now the Lane Sea goes up because you kind of have to, instead of just processing one, you have to kind of wait for everything to finish, but the throughput also goes up actually quite a lot. Okay, so you're seeing kind of this immediate tradeoff between latency and throughput.
+
+说话人 1 33:07 
+If you're on low latency, you just use one b equals 1 b. If you want high throughput, you want larger B. In general, what happens if you use a batch size of even larger, so 256. You see that lolancy goes up. Throughput goes up, but you see that the throughput isn't going up that much because you get diminishing returns after a while.
+
+说话人 1 33:32 
+But the most kind of, you can actually do this on 8 of 200 because if you look at them, the memory is 240 are gigs. So that doesn't even fit. Okay, so the batch size, you can only increase to a certain point because of memory.
+
+说话人 1 33:51 
+Okay, so just to recap, there's a tradeoff between latency and throughput. Smaller batch sizes, you would battery latency. Larger batch sizes yield better throughput. And finally, there's, we talked last week talked about parallelism for training and it was, you know, kind of complicated, annoying.
+
+说话人 1 34:12 
+At least one type of parallelism for inferences is really nice and simple. You just launch m copies of a model. Okay, no communication because the model, you don't need to update the models.
+
+说话人 1 34:26 
+The latency is the same and the throughput increases by I am. So that's pretty good. So always remember that, you know, don't forget easy things. Now, there are cases where you, if you have a large enough model, then maybe it doesn't even fit on a single GPU and you need to shard the model. And in this case, you also want to start sharding the KV cash in some cases to get, you know, better, you know, efficiency. So there's for more details, check out the.
+
+说话人 1 35:00 
+This book chapter. Okay, so the time to first token, which is a metric I mentioned earlier, is essentially a function of the prefill.
+
+说话人 1 35:13 
+It's basically how long does it take to encode the prompt. And usually it's, you know, this is compute limited. So you're basically going as fast as you can and there's not much you can do about it given a fixed architecture. And well, okay, so sorry, you can improve it if you reduce the batch size still. But if you want to improve the throughput, you have to, you know, increase the batch size.
+
+说话人 1 35:48 
+Okay, so any questions about that? So this was on computing the throughput and latency. And because of the memory limited argument that I gave in the previous part, I just focus on memory and compute how many bytes need to be sent. And that gives me a rough bound on the latency. In practice, the compute, there are some regimes where compute does matter, but I'm sort of ignoring that.
+
+说话人 1 36:18 
+Just keep things simple. Okay, a question. Is this assuming a single team? The correct. Yes, this is assuming a single GPU.
+
+说话人 2 36:31 
+By creating of the apps from multiple users. Each of these prompts have to be completed different.
+
+说话人 1 36:44 
+Yeah, so the question is, if you have multiple users and you're batching them together, they might arrive at different times. We're gonna finish at different time. So we're gonna get to that. That's gonna be a special issue that we're gonna have to deal with. Any other questions?
+
+说话人 1 37:04 
+Okay, so now we have a good handle on what the inference workload looks like. We looked at the arithmetic intensity. We looked at the transformer inference with respect to arithmetic intensity. We saw that it was memory limited thanks to the tension where the KV cache has to be special for every sequence. And then using that, we can compute throughput and latency, which are the main inference metrics that we care about.
+
+说话人 1 37:32 
+Now, how do we make things better? Okay, so there are some things that you can do on that are lossless. You can write better kernels, you can improve your systems. But I would say that the kind of, there's a lot you can do if you're willing to take, you know, shortcuts.
+
+说话人 1 37:53 
+And these are kind of really interesting because technically this lecture is on inference, but secretly it's on model architectures. Because what you'll see is that a lot of the changes in model architecture are going to have direct impact on inference, and we're actually inspired by needing to do inference quickly.
+
+说话人 1 38:14 
+Okay, so the big bottleneck here is the KV cache, right? Because remember, memory limited, which means that the less memory stuff takes, then the faster you go. Not just because of flops, even though that's department, but mostly due to memory because it's mostly about the memory transfers. If that's one thing you take away from this lecture, it's like all about the kind of the memory for speed. Okay, so the problem is that if you just start walking away at the KV cache, you might lose accuracy. So how can you make sure you don't lose too much accuracy, but still maintain your KV cash small? So there's a bunch of ideas. I'm going to go through that all. Essentially try to change the architecture to reduce your KV cache. Some of these ideas I think you've seen, but I'll go through them kind of in this sort of more systematic way. So there's this idea called group query attention.
+
+说话人 1 39:23 
+So multi headed attention, which is the vanilla transformer keeps around basically number of heads. And for each of the that number, you have same number of keys, values and queries.
+
+说话人 1 39:38 
+There was a mo one time, a multi query attention, which you only have one key and one value. Basically, one key value had turned out that was not very expressive. So there is a sort of intermediate point where you have a reduced number of keys and values. And then you have more queries.
+
+说话人 1 40:00 
+So why are we doing this? Well, remember, we want to reduce the KV cache size. So the fewer keys and values there are, the better. So the batch size and the sequence length doesn't it get changed, but it's in the dimensionality of the. These vectors don't change, but it's the number of key value heads that we're reducing.
+
+说话人 1 40:22 
+Okay, so that's basically the idea. And this paper shows that you do get latency and throughput improvements, so times per sample. And as you increase the number of groups, then up to eight or so, basically there's a negligible, it's really fast compared to the full attention. And as you increase the number of groups, obviously you kind of end up at the regional. So that's latency and throughput improvements. And just to actually do this kind of more rigorously, so we have our llama to thirteen b model. And if we compute the statistics, this is using a batch size of 64.
+
+说话人 1 41:17 
+Remember, this is what we got. I guess I should print out Lindsay here. Well, and then if you run it with a GQA, you see that the memory is reduced and the throughput goes way up. So this is actually great.
+
+说话人 1 41:40 
+So this is what happens if I take the llama to 13 b architecture and I just reduce for every query head, I'm going, sorry, for every key value head, I have five query heads. That's why 1 to 5 ratio means, so which this also means we can use a larger batch size because remember last time we tried to do 256, it even fit in an h 100th memory. So now we can actually comfortably fit into the H100 memory and then we can further improve the throughput by using a larger patch size. So you can see kind of a lot of different effects here by reducing the number of key value pairs, the memory of the KV cache produces. That means the throughput and latency go up automatically because fewer memory transfers. And furthermore, is a secondary effect. I can increase the batch size within the GPU and that further improves the throughput. Okay, so that's wonderful.
+
+说话人 1 42:45 
+We have to also make sure the accuracies doesn't drop. So this is this original paper that shows that this is full attention. This is GQA. The time is much less, but the accuracy is basically the same. Okay, now, yeah, what actually happened? So I don't, so Llama 2 did not use this ratio, but llama 3 actually picked up by, you know, GQA and, you know, probably motivated by the kind of inference cost. Actually, Lama two, I think the 70, the large model did have GQA, but not the smaller ones. Okay, so that's a GQA.
+
+说话人 1 43:29 
+There is another way to reduce the key value cache. And this comes from deep seek. So this is actually from the deep CPV2 paper. And it's called multi head Lane tension, which taught you lectured about previously, but I'll try to talk about it in the context of inference and its implications.
+
+说话人 1 43:50 
+So the basic idea is here's full attention and GQA says I'm going to use fewer keys and values. MLA says I'm not gonna change the number of key in values. I'm going to project these into a lower dimensional space. So it's another way of shrinking the KV size, but just in a, I guess in a different dimension. So instead of using n times H dimensions for each, for the KV cache of each of, you know, token, I'm gonna project out to C dimensions. And this is what Deep Seat did. It's actually quite of aggressive reduction from 16,000 to 5 to 12. Only wrinkle is that this is not compatible with rope. So they need to add a few more dimensions to put rope back in.
+
+说话人 1 44:40 
+But overall, this is actually quite promising from a KV reduction perspective. I'm not going to do the math. You can, but you can just trust me that you can see kind of how the KV cache would be reduced a lot and you get to the same kind of latency and throughput advantages. And in terms of accuracy, they actually showed that compared to GQA, the MH, sorry, the, actually maybe I'm showing the wrong thing here, may Mitch. Okay, I meant to show that the MLA actually improves, but this table does not show that. So I have to dig that up later. But anyway, it MLA does preserve the accuracy as well.
+
+说话人 1 45:35 
+Okay, so there's another idea which says, well, you know, the GQA basically shares, you can think about it as a sharing key value vectors, right, within a token and within a sequence. But we can also look at something called cross layer attention, which there's a paper on this, but I think many people have been kind of thinking about this and doing this. So I know none of this is actually the first paper, but basically, if you look at the transformer IR diagram, you have the key value projection of one layer, and then you have the next layer. And these key value vectors are separate usually. But the idea here with CLA is that we're just gonna use the same key value projection across layers. That's why it's called cross layer attention.
+
+说话人 1 46:35 
+So just as GQA shares across heads, CLA of shares across layers. So here we, they show that they empirically improve the parade of frontier of accuracy and the KV cash size. So KB cache size, which relates to throughput and latency, you want to be small and you want perplexity also to be, you know, small. So they're able to, you know, improve. But okay, so notice that, I mean, for example, H6,64 heads, you know, this cash size goes, it gets reduced, but the validation perplexy does go up a little bit. But overall, there's kind of advantage in, you know, making that tradeoff. Okay, so there's a yet another way to do things. So local attention, which has been explored actually quite a bit since even kind of there's a long former, there's an OpenAI paper and then Mistral and I think many others use this as well. It's a very, I guess, a natural idea instead of, if you look at a full attention diagram gram, it's dense and squared. That's where a lot of your complexity comes from. And basically, the idea is you're going to just attend to only the past K tokens, which means that in the KV cache, as you're generating the sequence, you don't have to remember everything. As soon as the token kind of falls outside your window that you have attention, you can just throw it away, right? So local contention is very, you could say that the KV cache size remains constant as opposed to growing with a sequence length. So this is really good, right? Because that you mean suffer even long sequences, you can have quite a small cash. Okay. But you know, the problem is that this still, you know, hurts accuracy. Because if you just think about it, like, why are we doing attention instead of Rnns is that we needed to have long range systematic model run long range dependencies. And this is in some sense, even the college attention is a little bit kind of overselling. This is only looking at the local context, which is not very expressive. So what you do here is you can interleave local attention with full global attention hybrid layers. So for example, character AI used for every 6 layers, they had 1 global attention of global layer and five local layers. So it looks something in addition to cross layer attention. So it looks something like this, where full attention, every layer you have to store the, you know, KV cash. And for what they did is that for every six layers, you have the full attention. But in between you have this local attention. And on top of that, they have KV cash sharing locally, both at the for the local attention and the global attention.
+
+说话人 1 50:10 
+So this is like all the tricks kind of, you know, I'm not all the tricks, but many of the tricks kind of combine, you know, together. So in summary, these are a few ways to reduce the KV cache size. Because remember, inferences memory limited. So you want to reduce the cash size, but you don't want her accuracy too much. And there is many ways to do it. You can lower the dimensionality of a KV cache. You can have few KV cache vectors. You can reduce the dimensionality of a KV vector. You can share the KV cache across layers and also you can use local attention on some of the layers. Okay, any questions about the set of tricks for reducing the KV cash?
+
+说话人 2 51:04 
+Action. So like, I mean, like, I feel like the weights are all being shared across the, like the same players. Like, do you just have like one set of weights? We're just like KV that's shared across, you know what?
+
+说话人 1 51:19 
+Yeah, so the question is, are the weights share? So the KB cash is share, but the weights are shared. So what happens is the weights for doing the, you know, the projection need be shared. So there's some consistency. Yeah, yeah, there's another question.
+
+说话人 2 51:42 
+The context size is too large and we, you know, and then it increases the KV cache as well to context size when you come, the ellipse context is given to the translation model. Yeah, it increases the mini size. So let me try using those context.
+
+说话人 1 52:02 
+Yeah, so the question is, if you have really long context, let's say your prompt is huge, that's gonna intrinsically take a lot of KV cash. So all these tricks can try to reduce that. You can do more aggressive things that like, you know, there's ideas like, you know, just tokens or ways to summarize the prompt, which we're not gonna talk about in this class, but there's ways of that address the long prompt situation as well. Okay, so now I'm gonna talk about even more radical ways of making inference go faster by changing the transformer. So the KV cache, these are basically variants of the transformer. But maybe you can actually go outside the transformer and do better because the transformer wasn't really designed with, you know, heavy inference workloads in mind. They would just try and train a good model that efficiently. It was mostly about training efficiency and the auto regression, as we sort of pointed out, is really causing this kind of, you know, bottleneck here with integration plus the kind of the full attention. So we're gonna talk about two directions, safe space models and diffusion models. This is gonna be fairly quick. So the idea of safe space models is actually drawing ideas from, you know, single processing and control theory. Initially, the motivation was trying to model long context sequences without suffering the n squared blow up. So it wasn't necessary about inference speed. But it turns out if you solve that problem, you get faster inference too. So there's a kind of early paper on S4, which uses classical state space models, which are basically these kind of linear dynamics systems, which are, you've been used to kind of model along contacts and sort of shoehorning them into the kind of a modern neural set up. This work is allows has is, you know, nice in that it has sort of this R and n kind of interpretation due to the linearity structure and also has a, you know, convolution, no interpretation as well. So they publish this paper and, you know, show that it, I think, work really well on these long context, you know, synthetic tasks.
+
+说话人 1 54:42 
+But what they found is that what, I guess what was discovered is that they don't really work a well for language modeling. And that's obviously kind of a disappointment because a lot of the value of Transformers is being able to do language well.
+
+说话人 1 55:00 
+So in a series of papers, there was, they sort of identified a set of kind of synthetic tasks that capture the essence of why these models weren't working well. And that's basically these associative recall tasks. So here's a synthetic task where you're given a basically a sequence of key value pairs. And the goal is to predict, basically look up the key and output the value. So in some sense, it's kind of a logically a trivial task, but it's long sequence because I can have a lot of key value pairs and I'm gonna have to look far back. It can be arbitrary long dependence. And you can see that local attention is not gonna work very well because it's just gonna remember the last few sequences. And what the problem with state space models is that they're sort of good for these kind of signal processing tasks, but really this is like you need to go isolate a particular key value pair and pull out the answer. And for those type of acid and Roy work, so there's a bunch of work I'm not citing. There's like Hyena, H3 and then Mamba, which basically tweak the or change the hssm to basically handle these associative recall tasks. And eventually it worked better up to kind of 1B scale was matching, you know, transformers. And the mambam idea of mamba has been popular in scaled up even to 52B moe by AA 21 folks notice that in this case, they still had to use a transformer. So a transformer, but only every, I guess, 8 layers they had to transform. The rest of them were Mamba layers. And so that, so again, led to a fairly big, you know, savings and speed up. And, but.
+
+说话人 1 57:00 
+More recently, there's this kind of revival of this older idea called linear attention, where instead of let's see if I can make this bigger, is actually a kind of a very simple idea. So you know what local attention or sliding window attention is.
+
+说话人 1 57:19 
+Linear attention is this idea that you essentially, and he, so in this basically in the attention computation, there's a key and a query and you dot product of many, take the EXP of that, which is basically giving you a x kernel. So you can basically take a tailor expansion of that and write that computation as basically dot products of some non linear map. So then what you essentially have is you can think about for every key value position, you are basically applying some sort of non larity blowing up into some space and then doing some linear computation over it. And because it's linear attention, it actually kind of behaves like an RNN and it's a linear in the sequence lanes rather than quadratic. I know that was a little bit fast, but I just want to give you sort of the taste of it.
+
+说话人 1 58:19 
+And so this idea has been actually scaled up quite successfully. So there's this organization called mini max that's training pretty legitimate models up to 456 billion parameter Moes. And they use this basically linear attention idea.
+
+说话人 1 58:41 
+Now they have to use full attention still once in a while, it seems it. I don't think people have been able to get around having some full attention, but at least it seems like people have been able to get rid of most of full attention in it. Like most of the layers are not full attention anymore. They're just either linear layers or local attention layers, which are much more efficient. Okay, so the linear plus local attention, you know, now are actually yielding serious state of our models. And it's probably, you know, safe to say that, well, I don't know what's exactly the close model providers are doing, but I would suspect that there would be at least as kind of advanced in terms of as efficient as this in leveraging scarcity.
+
+说话人 1 59:39 
+So it's kind of an interesting question when people ask like, well, you know, it's attention all you need as transformers at. Well, you know, yes and no. I mean, I guess in some sense there is still the sense square there. Maybe we'll be able to get rid of it, but most of the transformer has been like pretty radically changed by having other so much lighter weight, you know, components and you're still able to get much of the same and kind of accuracies.
+
+说话人 1 01:00:09 
+And all of this is, you know, really helpful for inference because on these non full attention layers, you're basically replacing the order TKV cache, which grows as a sequence link with something that's constant. And there's papers by that follow up. I think they on the based paper where they go, there's some either in this paper or in follow up work. Sure. Analyzing basically the tradeoff between the KV size and the ability to do various types of kind of recall tasks, which makes sense because if you don't store very much, you won't be able to solve certain tasks. But there is this tradeoff curve that you can try to play with. Okay, so that's all I'll say about the state space models.
+
+说话人 1 01:01:03 
+So now let's talk about a completely different style of generation models, diffusion models. So diffusion models have been very popular image generation, but it turned out to be fairly tricky to get working and text, although there recently have been some advances here.
+
+说话人 1 01:01:19 
+So the idea of division is that you instead of generate R regressively, you just generate every token in parallel. So obviously, if you only do that, you know, via some simple layer is not gonna be very good. You can't generate all the words in parallel and expect it to be coherent. But what you do is you iterate and you keep on refining this generation until it gets to your final GE generation that you output. And the idea behind genuine parallel, you no longer auto regressively, you know, bound and that generating all tokens in parallel, well, can be done.
+
+说话人 1 01:02:00 
+In parallel. So you get to saturate your GPUs relatively easy as long as your context length is large enough. So recently there's this and Session Labs has produced some pretty interesting models. There's not much written about them, but you can see kind of a demo of the generation and process. It just kind of generates code instantaneously, but it's obviously a kind of broken code. And then it's, you know, kind of refines over time. So, and this is one of their benchmarks that show that at least on coding.
+
+说话人 1 01:02:40 
+I'm not sure about other tasks that if you look at that tokens per second, these models are like way out here in terms of speed compared to anything that's transformer. Even Jamba, remember as like a hybrid Mamba transformer architecture is quite slow compared to these diffusion models.
+
+说话人 1 01:03:02 
+So now whether diffusion models are, you know, be, will be kind of general purpose and powerful enough in all of these. That remains to be seen. But I think it's, you know, you have such a lead on the kind of the token's speed here that even if you, I think you can put more compute and kind of recover some of the accuracy losses if you need to.
+
+说话人 1 01:03:27 
+Okay, so the summary here is that I think this whole kind of architecture, novel architecture thing is actually really exciting for inference because they allow you to sidestep kind of fundamental obstacles, right? So if you're dealing with attention, you just have this fundamental KV cash obstacle that you can quantize, you can optimize, but it's still there. And and so by making a kind of safe space model, you're shrinking that to like a constant size. And as long as you can keep up the accuracy, which is big if, then you win big time. Same with the diffusion models. Auto regressive generation is a key bottleneck.
+
+说话人 1 01:04:09 
+Now if you just generalize, generate things in parallel, now all of a sudden you kind of like change the game, you know, completely. So there's much more work to be done here in proving inference.
+
+说话人 1 01:04:21 
+So as you can see now, inferences, the inference game is much broader than it seems at first site. It's not really about kind of necessary the systems optimizations to make it fast, although you obviously need those. But I think the real gains are coming from like real radical changes in architecture. Okay, so if about 10 minutes left, I'll go through these quickly.
+
+说话人 1 01:04:45 
+Quantization and model pruning. So quantization, the key idea is just reduce the precision of the numbers. Okay, so easy, very easy to do. And the thought is at less memory means a less bytes transfer higher lay, sorry, there should be lower latency, higher throughput. And you do have to worry about accuracy, of course, that's the tradeoff. If you look at the different types of, you know, formats, Fe thirty two used for training, not use for inference, really BF16 is sort of the default for inference, you can go down to FP8 or INT eight, which now is less accurate, but much, you know, cheaper than even FPA. So people do a bunch of inference in 8, which if you look at the range, I mean, it's an integer between 1,27 minus one 28, which is not that it's pretty low precision. And people are even going down to in 4, which is they're not. So in 4 is pretty, you know, low. There's also other ways you can do. Okay, so you can, so once you kind of dis decide that you want to quantize, I guess you could do several things you can train with the quantization, but obviously that means you need to retrain models and more. I guess commonly you do post training quantization where you take an existing model in trying to quantize it and try not to screw things up too much. So there's a paper called element INT 8, which I'll talk through, you know, kind of briefly. So in quantization, basically what happens is that you take your, you know, your vector, which is, let's say, FP16, and then you need to figure out the dynamic range, right? If you want to pack it into end 8, you need to figure out what the largest value is. And once you figure that out, you can kind of, you know, divide by that and multiply by 1,28, and then you get your integers. And then if you need to. Dequantize, then you kind of go the other way. So basically quantization means that remember, memory is a bandwidth, right? So bottleneck. So all your transfers are happening and in date, but when you actually do the, you know, I guess you sometimes have to upcast to a floating point to actually do the arithmetic. Okay, so the problem with INT eight is that not everything you know fits nicely and you have these outliers which appear in larger networks that screw things up. So what this paper did is that you take a this matrix, you identify the really large outlier values and then you handle them separately use in full 16 bit precision and then do the most of them, a vast majority, and edit. So this works well, but is actually a bit, you know, slower. So the motivation here wasn't infant speed, but more they even be able to fit your model into memory.
+
+说话人 1 01:08:05 
+There's another paper called Activation Aware Quantization. And here the idea is that you're kind of quantizing the basic kind of the weights, but you're gonna figure out which weights to quantize based on the activations, you know, really quickly. This, you're going down to actually in 3 and this obviously reduces memory by quite a bit and leads to a 3 x, you know, speed up. And so the general idea here is that you want to get a train model. And it just happens that some of the weights or activations are going to be abnormally large. So for those, you handle separately. And then everything else you can kind of work in low, you know, precision.
+
+说话人 1 01:08:54 
+Okay, talk about model pruning ideas. Very like quantization. It's sort of the basic idea is very simple. You just rip out parts of an expensive model to make it cheaper, and then you fix it up.
+
+说话人 1 01:09:07 
+So in this MVD paper, what they do is they first identify important either layers or heads or hidden dimensions using a small calibration size. They use some, you know, simple scores to compute that. And then you just remove the unimportant layers or hidden units or pads. And then now if you just take that model, it's gonna be clearly worse, right? But so then the last step is you distill the original model into the prudent model. So you kind of repair the model from the initialization, which is your prune. So you're not starting from scratch. You're starting from something that's worse, but hopefully not worse and hopefully retains a lot of the same structural properties of the original model. It's just maybe not kind of like calibrated in some sense, and the results are pretty good on that. So they have these 15 billion parameter models that they're able to reduce to HP with hardly any drop in this, I guess, at least according to mmlu. And then down to 4B with some drop, but you also are going down quite a bit to a 4B model.
+
+说话人 1 01:10:20 
+Okay, so maybe just summarize, that's taking shortcuts idea. You can reduce inference complexity without hurting accuracy. You can do it from scratch where you just define a fresh architecture that's by construction fast and just train it. Or you can distill, you define the architecture, you can take a slow model and you figure out some sort of scheme to initialize the new model with the old model. And then you basically do distillation. So, okay, so now all of these are a little bit unsatisfying because they're lossy. So you get massive speed UPS, but you always wonder, well, maybe this model isn't as actually good as original. So speculative decoding or speculative sampling allows you to basically have your cake in needed too.
+
+说话人 1 01:11:18 
+So recall there's two stages of inference. You prefill which you're given a sequence, you encode all these tokens in parallel. There's a compute limited, which is great. Notice that this also gives you log probabilities for each of the tokens. And then there's generation, which is one token at a time. It's memory limit, it's slow. So in other words, checking is faster than generation.
+
+说话人 1 01:11:43 
+So intuitively, this makes sense, but hopefully now you also appreciate the math behind why this is true. And the specle of sampling I idea is actually really, again, it was proposed in parallel by these two independent teams from Google. And the idea is to use a cheap draft model P to just run ahead and generate some tokens. And then you're gonna evaluate those tokens with a target model. And because evaluation of given tokens is just pre fill, so you can do that in parallel, which is fast. And then you accept it if it looks good. So this is what it looks like in real life.
+
+说话人 1 01:12:28 
+So if you're using a big model generating one token at a time, that's slow. But in secular decoding, you have the draft model that's racing ahead, generating a lot of tokens and using the big model to essentially verify. And sometimes it will reject and sometimes they'll accept. And the acceptance rate basically determines how fast of a speed up you have.
+
+说话人 1 01:12:53 
+Okay, so here is the more formal algorithm. So you're gonna have a look ahead of K. So you're gonna use your draft model and generate K tokens auto regressively. So this is hopefully fast because your draft model is small and then you've given these K tokens that you generated and I'm gonna score them based on, I'm gonna compute the probability under the target model queue.
+
+说话人 1 01:13:19 
+Now I'm going to decide whether I want to accept this not or not. So I go through each token and I'm going to essentially accept it with probability Q over p. And the one just is make sure this, you know, like probabilities are between 0 and 1. If this kind of looks like if people are familiar with Metropolis, Hastings is kind of where this kind of comes from. So intuitively, you're sampling with P. So you need to divide that out because you don't want P, you want q. So this is kind of an importance weight on this. So if you accept it, then great, you kind of move on and you look at the next draft token and so on. And if you don't accept it, then you're going to sample from the target model, the slow model. But you kind of do this correction where you've already tried to sample using P, so you don't need to do that anymore. You subtract it out and you sample from queue. So this is basically kind of a rejection sampling with a proposal P and a target, sorry, target Q. The only difference is that you are sampling your injection, sampling you. If you reject, then you reject and you just try again and then try again. And here we don't want to keep on kind of looping forever because if you reject, we're just gonna say, okay, fine, we'll bite the bullet and just sample from the, there's more expensive model. So the cool thing here is that you're guaranteed to get an exact sample from the target model.
+
+说话人 1 01:14:56 
+Okay, so those of you familiar with sampling, this is what shouldn't be too surprising. You're able to use kind of prior information to speed up sampling. But in the language modeling context, this is kind of nice. I'm going to skip the, this is not really a proof. This is just kind of some derivation to show that for a case of Vocab 2 is why this these formulas kind of give you the right unbiased sampling procedure and it works pretty well. So the accuracy is, you know, there should be actually the same since it's the same model, but maybe there's some randomness there. But the speed up is you're getting a factor of two speed up essentially. So, and so in practice, what you do is you take, you have something like a 70 b model and draft model is much smaller. And if your target models ADB, HB, then your draft model might be 1B. And you generally want to make the draft model is closest to target as possible. And so if you're doing some distillation, that could make it even better. There's a bunch of, this is a pretty hot area of research and inference.
+
+说话人 1 01:16:13 
+There's a lot of ways to improve this process. You can use Medusa, which is this way to have the draft model instead of generate auto regressively sample multiple tokens in parallel, or Eagle, where you're actually taking high level features of the target model and pumping them into the draft model to generate. So the draft model doesn't actually have to stand alone. It can be kind of glom onto the target model to help it generate. So summary, exact sampling from the target model, thanks to math. And this exploits the symmetry between checking and generation, right? So, or prefill and generation. And there's actually a lot of room for innovation on a draft model. Which can, you know, everything that we've talked about before where you can have different radical architectures, different ways of quantizing, all of those apply, right? The only thing is that you get to basically guarantee that you're getting exact sample.
+
+说话人 1 01:17:17 
+Okay, so now I'll go out of time, but quickly go through the question that came up earlier, which is that in practice, when you're serving, there's live traffic requests come at different times. If you finish at different times, they have, some of them have sheer prefixes, some of them don't. They have different lanes. So it's very heterogeneous ink comparison to training where you get basically a dense block of tokens and you're basically gonna PU push it through your GPU at full speed. So what do you do in this case? So there's a series of papers that kind of explore this. And the basic idea is, and this is, so the last two parties are more of a kind of systems level contribution. So the idea is that you don't wait for batches to, you know, the train leaves. There's no, the train doesn't wait for you. So when a new batch comes, you're just gonna put it in, right? Which means that there's sort of this, the worker that's generating tokens needs to kind of hand control back to the scheduler every step. So you generate token, come back to the schedule and say if there's new a new request and they get stuck in and then it kind of continue. So you're kind of not wasting any time waiting around for requests.
+
+说话人 1 01:18:44 
+Now there's a kind of a problem with batching, I think, which is behind the question. Batching works when everything is the same dimensionality, but every quest might be a different length. So there's this idea of selective batching where you basically break up your computation for attention. Everything has to be handled separately. But for your MMPs, remember, which are the bulk of the computation, you can actually take tensors of different sizes and you just flatten them. And because they don't interact, they can just like be kind of along for the ride in the batch dimension. Okay, I know that was fast, but I'll just quickly go over page attention now. This is the paper behind VLM, which some of you probably have used. And this addresses the memory usage problem. So if you have a KV cache and prompts are coming in and finishing, then your cache is going to get fragmented. So you're going to have, you're going to allocate a bunch of space for a request, but you don't know how many tokens are gonna generate. So there's gonna be internal fragmentation and then there's also gonna be external fragmentation where there's padding between the requests and responses. So that's no good.
+
+说话人 1 01:19:56 
+So the page attention basically says, remember operating systems we have and how kind of virtual memory works. We divide the KV cache into a sequence of contiguous blocks and then we just put them wherever we find wise space. So if you have two requests coming in and then they might just, you know, the first request might be here, here, and the second request might be here and here. So the blocks are the things that you're going to keep contiguous, and that's going to give you your, allow you time to coalesce your memory.
+
+说话人 1 01:20:31 
+So you can also play these tricks where if you have sharing of prefixes, then there's another idea from operating systems, which is copy and right. So you basically maintain reference counters for how many basically sequences are using this particular block. And then if you need to kind of diverge and have blocks go in different directions, then you copy and you reduce the reference count.
+
+说话人 1 01:20:58 
+There's a bunch of other VM optimizations which I won't go through, but basically the summary is, remember, in your operating systems classes, you can apply them to inference as well. Okay, so quick summary. Inference is really very important. It's very, and the characteristics are distinct from training. You're memory limited and that's also dynamic. So which leads a bunch of new challenges. We saw a whole host of different techniques around new architectures, quantization, pruning, distillation, speculative decoding. There's ideas from systems which can allow you to a better user memory overlap, communication and compute and things like that. But I would say that there's probably even more opportunity in sort of the modeling and architecture. Because if you think about it all, you don't, inference, not narrowly is inference in a particular. Model, how do I run this particular model? But who cares learning about that particular model, you care about delivering good accuracy given your resource budget. So a lot of these ideas that are trying to change the, reduce the KB cache, changing the transformer are basically ways to sidestep the problem and say, well, I have something that's more efficient and I can train in a way that gets me better accuracy. Then I went, okay, so that's all I have and I will see you next time. Then we're back to skating loss.
+
