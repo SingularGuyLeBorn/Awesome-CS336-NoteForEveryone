@@ -1,14 +1,12 @@
-# 默认情况下，让 Git 自动处理文本文件的换行符
+# 默认情况下,让 Git 自动处理文本文件的换行符
 * text=auto
-
-# 明确指定哪些是文本文件，强制进行换行符规范化
+# 明确指定哪些是文本文件,强制进行换行符规范化
 *.md    text
 *.txt   text
 *.html  text
 *.css   text
 *.js    text
-
-# 明确指定哪些是二进制文件，禁止 Git 修改它们的任何字节
+# 明确指定哪些是二进制文件,禁止 Git 修改它们的任何字节
 *.png   binary
 *.jpg   binary
 *.mp3   binary

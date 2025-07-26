@@ -1,312 +1,208 @@
 2025年7月14日 下午 10:16|1小时 14分钟 32秒
-
 关键词:
 model training、different things、different models、training data、instruction data、generalized thing、right thing、second thing、good things、reasonable thing、generative modeling、model output、many things、last thing、other thing、standard thing、important thing、policy data
-
 文字记录:
 说话人 1 00:00 
 Training. Up until now, we focus very much on the big pre training systems data components. And then now we're gonna take the big pre train model and we're gonna make it useful and safe in various ways. So that's gonna be the next two lectures from me. Today is gonna be RLHF and sort of safety alignment stuff. And then Thursday is going to be RL from verifiable rewards. So things like reasoning, training and math and so on will be on Thursday. As I said before, today we're going to shift from pre training to post training. Percy in the very last lecture did cover some stuff about post training data. But really I think, you know, the focus today is going to be in going from, you know, essentially this big transition that we saw in the field, right? So we have GPT three, really remarkable system, really impressive, lots of pre training, lots of compute, but this is not really a useful system, right? I guess there was a couple startups, UPS around, you know, building ad copy and things like that. But it was not very useful, didn't follow instructions. It didn't, you know, do anything particularly too interesting from a product point of view. And then all of a sudden, you know, we got ChatGPT and chat GBD can do all sorts of amazing things and follow instructions. And we've kind of seen what that has done society since then, right? So today's focus is gonna be on this arrow right here, like how do we take a pre train system like GBD3? And how do we make something like ChatGPT and then we're gonna try to get to the nuts and bolts of that process.
-
-说话人 1 01:32 
+说话人 1 01:32
 And I think many, most of you, you know, have never, you know, worked on things like controllable generation or like the previous generation of text generation systems. But really like modern instruction following models are just amazing, right? Like this is one of my favorite examples from Sebastian Bubex Sparks of AGI Paper in 2023 around when GBD4 came out. But you know, it can follow this like very long block of like nested compound instructions and then combine that with its coding capability to output, you know, zero shot map plot lip code. And I think all of you just like take this for granted.
-
-说话人 1 02:10 
+说话人 1 02:10
 Now it's like, yes, of course, chatgbd can follow 10 instructions at once, but it's just kind of amazing that it can do this, right? And I think part of my excitement about this lecture is the fact that I can do all this. And the other thing that I think is very important, right, is that now that these systems are out in the wild, safety and content moderation just becomes really important, right? Safety from the perspective of, you know, these models might get misused, someone might try to use them for scams. And also content moderation, if you're thinking about these, this being like useful products that you can like ship and like people would pay for, right? Like people don't really want to pay for put ads on systems that are like horrifically toxic, right? Like I think one of the big reasons why Chat GBT has been so successful is that, you know, it has really significant guardrails around it. So, okay, given that the goal today is to try to enable much tighter, better controls on language models, right? Pre training, you can think of mental, the mental model can be that it packs the model with all sorts of capabilities, right? Like after pre training, the model is able to somewhere within the parameters do lots of things like reason and answer questions, but it's not going to do them out of the box. And so today, what we're going to try to do is get models to do that out of the box. And so what we're going to do is to collect data of various kinds of behaviors that we do want from the language model and train it to do those things, right? And so the questions that you should be asking now is, you know, what does that data look like? How hard is it to collect that data? Percy has touched on it's a little bit, but given the importance of data, I'm gonna reemphasize it a little bit. I'm gonna have some interactive, some exercises to go over that. And then there's algorithmic questions like how do we make use of that data, right? Certain kinds of data are easy to use. Like, you know, if you have expert demonstrations, you just train to imitate that. But if you ask things like pairwise feedback, like model output a is better than model output b, how do we make use of that? And then finally, like, you know, how do we scale this up? How do we do the usual things that we've been doing in this class? So the structure of this lecture is roughly gonna mirror the instruct GPD paper because a lot of the post training pipeline that we have today is still off the instruct GPT paper. And so the first part of this is lecture is gonna be on supervised fine tuning. So if you look at the instruct GPD paper, you'll see this diagram that roughly describes a three step process for building an instruction following model. So part one of this lecture is going to be the leftmost part, the part where what we're going to do is we're going to do supervised fine tuning on expert demonstration. And then part two, we're going to follow the next two parts of the structure. We're going to talk about reinforcement learning and pair wise feedback.
-
-说话人 1 04:54 
+说话人 1 04:54
 Broadly, I'm gonna say that the ingredients in order to get, you know, this first. First part working. I mean, there's two things that we have to kind of think about. The first part is the training data, right? If you're gonna imitate expert demonstrations, you better have expert demonstrations. Like, what does that look like? And then the second thing I want to talk about is kind of the method, like you have data now, like how are you going to adapt to it? And there's an obvious answer. I'll, you know, talk about this again, but like just do gradient descent.
-
-说话人 1 05:23 
+说话人 1 05:23
 But there's also a kind of non obvious part to this answer. And you know, in case you haven't been following how people build these models today, this might, you know, be still surprising. So I'll leave that as a teaser for later.
-
-说话人 1 05:36 
+说话人 1 05:36
 Okay, so in Percy's lecture, you know, he's mentioned already several different kinds of instruction data, but today we're gonna like walk through a couple of them and we're gonna do a little bit of an interaction active exercise. So, you know, those of you who have your laptops open can use those for good. So I want to talk about two different details. Like one of them is what's inside these data.
-
-说话人 1 05:56 
+说话人 1 05:56
 People often say data matters a lot. I think post training is one place where this is even more true than before, because you're using very small amounts of data to get exactly the behaviors you want. So if you have noisy instruction tuning data, you're gonna get some pretty crazy behavior out of your models.
-
-说话人 1 06:11 
+说话人 1 06:11
 And then what kinds of things should we be paying attention to if you're in charge of post training data collection, what kinds of things might matter. So I have taken three different datasets from basically constructed in three very different ways. Like you might also, you might even call them like kind of three different paradigms to building instruction following or post training data. And we're going to go through each one and then we'll look at them closely and then we'll think a little bit about what's going on with these data assets.
-
-说话人 1 06:38 
+说话人 1 06:38
 Okay, so I'm talking about fan. This is by a bunch of Google folks. And fan is gonna be essentially constructed by aggregating a bunch of training datasets from NLP tasks, right? So if you look at it, you know, you see all sorts of different tasks like, you know, natural instructions v 2, which has a bunch of, you know, question answering and things. It's got t 0, SF, you know, adversarial QA and like topic classification. So basically this was constructed by taking existing NLP datasets that do all sorts of individual tasks and then aggregating them into one big metadata set, right? So this is one approach to building such datasets. We've got Open Assistant on the right. And this was, I think, a pretty unique sort of endeavor in which a bunch of online enthusiasts got together and decided to write instruction tuning data for language models. Like right after the release of ChatGPT, I think the excitement for this kind of thing was really high. And so there's actually a lot of good high quality human written data from that effort. And lastly, and you know, of course, this is a bit of self advertisement here, but as a representative of the kind of like language model generated post training data or like AI feedback style data.
-
-说话人 1 07:53 
+说话人 1 07:53
 I'm gonna talk a little bit about some of the data from Stanford Alpaca. So let's just look at examples, right? Like, I think looking at examples and talking about them are very useful. Now this is from random examples taken from the flan dataset. And you can kind of see the types of stuff that are in here. So, you know, you've got things that look like pretty normal instruction tuning data, like right highlights for this article, sauntering down leafy avenues past Dutch step gable buildings. And then, you know, in the end, there's even like more information on travel in the Netherlands at WWW Holland. Com. And then it answers, you know, the least known of the Dutch cities, the hug, was a village. And then it sort of summarizes, you know, this as a highlight, you know, you've got something like this where, you know, this is like, what is this text about? Here are your four options. It's business, right? So this is kind of a multiple choice training thing that's happening. This, you know, Prissy talked about the Enron dataset, so you all can like, you know, smile a little bit. But things like this of taking, let's say, maybe the Enron email dataset and you paste back, write a subject line for this email, and now you've got kind of supervision for that task, right? This one, I guess no one here has probably worked on text generation, but this is from a dataset called EQE, where you have like a database entry and then you're supposed to write a sentence that describes that restaurant. So immediately you kind of see, you know, you can probably get a lot of data for free this way, right? There's a lot of NLP training datasets and you can like put them all together and you will get a really big aggregated dataset. And so in that sense, swam was, you know, ahead of its time and produced a ton of data for this kind of thing. But also we see in many ways that this can be somewhat unnatural, right? Like we've already seen that like this Enron dataset is a little bit weird. We can really definitely see things like, oh, here's a text and then now you sort of append sort of the options to turn it into a task. And so you can kind of see the surgery that you have to do very visibly in order to make this kind of data set. And I think if you look at this, you'll agree with me that this isn't. Your usual chat interaction, right? For something like chat GBD.
-
-说话人 1 10:05 
+说话人 1 10:05
 Another example for this is alpaca. This was like a really early attempt at using language models to generate instruction tuning data. And so, you know, just to describe the procedure here, you know, a language model was used. There was a seat set of human written instructions, and then a language model was used to essentially generate more instructions. So that's the left column. And then you use something like instruct GPT to essentially fill in the response, right? And so here, you know, now we have something that looks a little bit more like, you know, on the left, standard sort of chat GBD inputs. If you compare this to something on the left, this is a very benchmark centric set of tasks. This feels a lot more like a set of interactions that someone might just throw into a chatbot. And the response is almost always in long form natural language versus with fun. Often it can be quite short, like one word or phrase or something like that, right? So we kind of see that, of course, you know, we also see that on the left, these are in some ways not very diverse inputs. They're very short instructions and then open assistant is kind of the third leg of this instruction tuning saga. You kind of see more complex queries on the left. And then, because back then, I guess people were just really into writing long detailed supervision for models. You see like actually really detailed responses. And this one even has a citation on, you know, how, like what makes this answer correct, right? And so, you know, very high quality, but also kind of very difficult.
-
-说话人 1 11:42 
+说话人 1 11:42
 And so now this is the first interactive task in this class, but especially those of you that have your laptops open, you know, please go to this URL. This should be a Google form and there will be a sort of one sort of prompt.
-
-说话人 1 11:58 
+说话人 1 11:58
 And now we're collectively going to crowdsource a instruction tuning response. And I'll give you all, let's say, 5 minutes to do so. Let me know if the link is wrong. But I did test this last night. So hopefully this is a working and then we'll look at the responses briefly. And then I want to talk about why I did this exercise. There is a teachable moment here rather than sort of getting you just off your laptops for a moment.
-
-说话人 1 12:30 
+说话人 1 12:30
 Okay, excellent. I think there's a decent number of responses. So I'm gonna maybe put them up. Let's see if I can put them up then. Yeah, there we go. Okay.
-
-说话人 1 12:43 
+说话人 1 12:43
 So in many ways, I think this reflects the kinds of data you get. I mean, if anything, you guys are all motivated to do this task. Then I think the standard crowd worker, you know, but you've got the person, I mean, I'm not sure what's going on here, but this is probably ChatGPT. There's a lot of emojis. I'm getting trolled.
-
-说话人 1 13:03 
+说话人 1 13:03
 But this is, I mean, I am preparing for lift. Thoughts? Good response. You've got, you know, the nah fam, which, you know, of course, is the kinds of things that you'll get out of crowdsourcing.
-
-说话人 1 13:15 
+说话人 1 13:15
 And I think hopefully one thing that you've seen or like felt as you were doing this is that it's actually really difficult to write long form responses, right? Especially for something that you aren't prepared for, right? And so, you know, you get a lot of short responses like this. It's very difficult, I think, to get people to write sort of long, detailed, you know, responses like this one, the very top. Often those kinds of things are, you know, from catchy BT. And of course you'll get things like, you know, I saw this one. Ice cream is a frozen dessert typically made from milk or cream. And you're gonna have to, you know, filter out those kinds of things that you're gonna get through crowdsourcing.
-
-说话人 1 13:55 
+说话人 1 13:55
 So why did I talk about this? Well, of course, you know, now you have a sense of what this task is like. Annotators in the wild, even if their experts will be under time constraints. And I think one of the reasons why, you know, things like AI feedback or using LMS to try to refine or generate these kinds of data has really gotten popular is, you know, if you look at the GPT four o response to this, you know, it's pretty good. It's a pretty good response to this question. It's very long, it's very detailed and generating this kind of a human response is gonna take a lot of effort and a lot of cost, right? And so you have to, you know, if you're in charge of human data collection at one of these labs, you have to think about, okay, like how do we take, you know, what I showed you in the spreadsheet and incentivize people to generate something that looks like this instead. That is no easy task at all. That is a very difficult crowdsourcing task.
-
-说话人 1 14:51 
+说话人 1 14:51
 Okay, and so these things that we've just seen, they vary quite a bit in things like length. We saw, you know, the. ChatGPT is and which is bullet points, like lots of style variations we saw in the open assistant example that, you know, sometimes people put in references, sometimes they put in sort of very complex deep knowledge. Like is that good or bad? I'll talk about that in a moment.
-
-说话人 1 15:15 
+说话人 1 15:15
 And there's also other important aspects to this process, right? Like maybe you want to collect a ton of data or very little data that's high quality. So you got this tradeoff. You also have to think a lot about safety, right? Like the data that we collected just now, that's just capabilities data, right? Just makes models answer things like what is CS three thirty six. It does not help us make our models, you know, you know, refuse malicious instructions and things like that. So we have to think a little bit about what that kind of data looks like here.
-
-说话人 1 15:43 
+说话人 1 15:43
 Okay. I think length has always been a big kind of gorilla in the room issue for all of these datasets. You know, when back in 2023, when it was very popular to generate these kinds of instruction tuning datasets. There's a survey like Yijiang Wang and others at UDAB came up with this very nice survey coming, looking over the many different kinds of datasets that were created early in that year. And you kind of see, if you look at the length of both the prompts, so that's the inputs and the responses, the completions, you see like really different lengths of both inputs and outputs. And inputs are probably a measure of sort of complexity of the task in many ways. And then the outputs are in some sense a measure of how you know, much you push the annotators or if you use AI generated response process.
-
-说话人 1 16:34 
+说话人 1 16:34
 And one of the things that you should be, you know, all aware of, you know, let's say you got put in charge of making a new language model, you're in charge of post training. Well, you know, if you're using human emails, people have a strong preference for lists. I mean, so do actually if you use AI as a judge, they also have a strong preference for lists and people have a very long preference for outputs like 60,70% ish preference for longer outputs. And so do sort of AI judges, right? And so this is a little concerning because you want to be optimizing for not just kind of the stylistic content of your responses. You ideally want to be using post training to do things like reduce hallucinations and actually make the model hopefully more capable.
-
-说话人 1 17:16 
+说话人 1 17:16
 One thing that we do see is that, you know, these factors are not super relevant for benchmark performance. So if you look at, for example, MLU performance, kind of despite the really big variation in length for a lot of these models. Most of the instruction tuning datasets, like the simple ones, you know, give you boosts over kind of the base model, which is the very top row above. Cuz I think one of the things that I'll say here is, you know, chat style evaluations have their place, you know, chat bot arena, alpaca eval, these kinds of automated, you know, eval's have their place in helping understand like user engagement and things like this. But benchmarks also have a very important place because when you post train, you don't necessarily want to be too affected by, for example, length biases and open edge domains and so on. And so you want to be really careful of these effects. You want to have a different diverse array of evaluation strategies to try to avoid those pitfalls.
-
-说话人 1 18:10 
+说话人 1 18:10
 One other thing that I think really trips people up when they initially start thinking about these things is to say, oh, what I'm doing is I want to collect high quality data and high quality data has lots of deep knowledge and has lots of citations, right? Like that's a reasonable thing to say. And I think, you know, Open Assistant, I think, had a great example of this, right? And so here's an example input output pair. You know, you've got an introduction about monopsining emics, and then there's these references on the response on the right. So now let's say we have a model and we fine tune the model to take the left side as input and reproduce the right side as output, right? So you can kind of think about two different things that this process is gonna do at the same time, right? So one of the things that this is gonna do is it's gonna associate, you know, medopseny with that citation, right? So it's learning new knowledge. So that is good, right? So that is a positive thing to do.
-
-说话人 1 19:08 
+说话人 1 19:08
 But it's also going to do a second thing at the same time, which is this kind of generalized thing of saying, if you ask me a complicated concept, I had better finish the output with a reference, right? And so it's basically the second. The first thing is teaching new knowledge, which is good. But the second thing here is kind of teaching the model to hallucinate, right? Like if the model doesn't already have somewhere within its parameters an association between monopsony and this citation, this Biven's initial book, you know, what might happen instead is it just learns that, oh, what I should do is whenever I have a complicated input, I should give a response and then make up a reference at the very end, right? Those are two competing explanations for what is happening here. And this is gonna motivate in some ways the second part of this lecture, right?
-
-说话人 1 19:57 
+说话人 1 19:57
 John Showman has this kind of great talk. I think he gave it up Berk. Basically where, you know, his argument is basically if you do this kind of thing, you're going to encourage the model to hallucinate, right? Like the model doesn't have the knowledge of answering a question. You force it to answer that question. What it's gonna learn is, of course, I'll learn the knowledge in some abstract sense, but it will also learn the other aspect of, I just need to make something up in order to sort of type check what the response should look like. Okay, yes, there's a question.
-
-说话人 2 20:28 
+说话人 2 20:28
 Writing has a sense of like, okay, I think I need to add a citation here. Let me search for two relevant citation, either for memory or let me actually use a database. It is the fact that like the element is learning that like, okay, here I should in such a citation is actually a correct and desirable thing. And it's, and the fact that it's a made up incitation is a either a memory issue or this something you can maybe augment a tool usage in this like, but like, I don't see why the behavior of needing to add a citation itself is problematic. Well, like, if you can either fix the memory.
-
-说话人 1 21:00 
+说话人 1 21:00
 Issue or the true user issue, sure. I mean, I think the, okay, so to repeat the question was like, I guess that was a more comment than a question was that the learning to put in a citation isn't a bad thing, right? Like, I mean, maybe you augment it with tools and I'll actually give the right citation. I mean, that's a fair point. But I think the thing to maybe point out here is like the deeper conceptual or not conceptual, the deeper issue with token prediction, right, is that you're teaching the model to kind of predict the right kinds of tokens. And here, you know, essentially the lesser of the two errors is to say hallucinating is less bad for my loss than not making up the reference at all. Right? Kind of the structure of the response always has to be fulfilled because you have to fill the tokens in at the right places, right? Of course, at scale, if you know the facts, if you have the right tools, right, those are good. You want to kind of make the predictions on the right spaces. But I do kind of think this is very indicative of this, like this failure mode that models can get into where you're trying to get it to do things that it can't, right? Like if your SFT data is just much more advanced than what your pre trained model naturally can do, you run this risk of teaching the model kind of this alternative shortcut behavior instead of teaching models the right behavior.
-
-说话人 1 22:16 
+说话人 1 22:16
 Yeah, so that's John Showman. I think he makes a fairly reasonable case that, you know, this is one of the reasons why like on policy RL, like reinforcement learning style things, there's an important thing to do because you want to know what the model already knows and only teach at those things to avoid, you know, hallucinating and whenever it's encountering some fact that it doesn't know that maybe you should change your fine tuning data to say, oh, I don't know that fact act instead of forcing the model to try to answer, right? And we kind of see this on the kind of other sort of knowledge storage studies as well where people have kind of talked about, you know, it's much easier for models to sort of reproduce known facts then sort of to learn sort of unknown facts where it just takes a lot longer for models to kind of learn effects that aren't shown in pre training. And this sort of is sort of matching what you might expect from these phenomena.
-
-说话人 1 23:12 
+说话人 1 23:12
 It's okay. I think one of the things that I'll sort of, you know, summarize that with is that there's a very counterintuitive phenomenon for instruction tuning, which is that, you know, you can have instruction tuning data set that is fully correct and like actually very rich. But actually that might not be good for your LM because it's gonna teach your language model to sort of try to make up facts to match that depth of knowledge.
-
-说话人 1 23:38 
+说话人 1 23:38
 That's always been, I think, one of the arguments for why you want to be really careful with both distillation data where the teacher model is stronger than your student model, and also really human annotation, where the human might be much more knowledgeable than the model, right? You want to be really careful to make the model abstain nicely when it doesn't know things. And in principle, you know, reinforcement learning style correctness could help. And we'll talk about that in a moment and sort of optimizing this at the instruction tuning level is just really messy and very difficult. I don't think people have really nailed it down, at least in the open research literature.
-
-说话人 1 24:15 
+说话人 1 24:15
 The other thing I want to talk about briefly, because I think this isn't necessarily something that can be solved with instruction tuning alone is, you know, to touch on safety and to think a little bit about what the tradeoffs are here.
-
-说话人 1 24:30 
+说话人 1 24:30
 So we know, you know, language models need some guardrails. They're deployed straight to end users. They're very capable. So they might use for misinformation or for generating things like scams or spam. And so there's a need for safety tuning these models.
-
-说话人 1 24:45 
+说话人 1 24:45
 And I think in parallel with a lot of the research on instruction tuning, there's been actually quite a bit of work studying safety tuning as well. And I think some of the early work in this area, you know, kind of has shown that even a small. Amount of sort of safety tuning data that's mixed in to instruction tuning process can make models are much safer, sort of paralleling a lot of the findings that people had that actually for instruction tuning as well, if you have a strong enough pre train model, even a small amount of instruction tuning data can get you a lot of the way.
-
-说话人 1 25:17 
+说话人 1 25:17
 Not to say that's sufficient, but actually that's, you know, sort of gets you to a reasonable point. And I think the core tradeoff with safety tuning that I'll sort of touch on in this brief section is this tradeoff between refusing things and not refusing kind of too much, right? So there's always this thing of, you know, if you have unsafe responses, you want your Safety Tune model to just refuse to answer. And then maybe you have these other, you know, actually safe responses, but things that look like on safe responses, like how can I kill a Python process, right? We all know that is a reasonable question to ask. But I guess if you're not, you know, if you don't understand English very deeply, you're like, oh, killing sounds very dangerous, so maybe I should refuse to answer that question, right? So how can you make models sort of understand this nuance? It's a very tricky thing to do, you know, purely in the instruction tuning setting. And so a lot of what people have done is come up with carefully curated small instruction tuning datasets to try to balance this tradeoff. So even some research has shown that even like 500 examples can make models follow some of the safety guidelines. It's okay to put this together.
-
-说话人 1 26:35 
+说话人 1 26:35
 Instruction tuting is surprisingly powerful. I think, you know, you would think that given how powerful things like ChatGPT are, that there's actually a ton of complexity into getting anything that works. I think you'll find that even if you take, you know, a fairly standard instruction tuning data set like Open Hermes or Open Assistant or any of these datasets, and you take a base model and you fine tune on it with reasonable hyper parameters, you'll get a model that behaves a lot like Lawmar Chatchy PK. It won't be quite as good. There's a lot of extra work you need to do to optimize it, but you can get pretty far.
-
-说话人 1 27:10 
+说话人 1 27:10
 The second thing that's, you know, good to remember is basically the notion of high quality data is just very complex and you have to reason about it really carefully. It's not obvious how to do. And then the last thing is, you know, actually even a small amount of data can have great leverage at the stage and changing how models behave.
-
-说话人 1 27:29 
+说话人 1 27:29
 The last thing I want to end this section on is how to do this instruction tuning. There's kind of a, you know, a flippant answer to this, which is, well, you've got demonstrations, just put in the instruction and the response and just do some gradient descent, right? We all know how to do gradient descent at this point. And I think in most academic settings, that's basically it, right? Like you're done. You do your small all scale gradient descent and you're done. But I think if you're at like a frontier lab and you've got more compute and you've got more money, then you know what to do with, then you've got a lot of compute and you've got a lot of data. And so you can scale this whole process up quite a bit. Like you can scale it up a lot. And modern instruction tuning pipelines are starting to look a lot like pre training pipelines. And so increasingly, the boundaries between pre training and instruction tuning are just getting blurred. Because if you think about it, instruction tuning data is still a sequence, right? It's just a sequence of tokens. And so I can throw that into my pre training process. And that's a totally valid thing to do.
-
-说话人 1 28:38 
+说话人 1 28:38
 And so this is an increasingly popular idea. I think, you know, the close Labs don't tell us anything. But, you know, I think the things that people have tell me in bits and pieces suggest that this is, you know, what they're doing. A lot of the open groups from China do basically this now.
-
-说话人 1 28:55 
+说话人 1 28:55
 And so what you do is you have your, you know, usual pre training setting, right? You do pure pre training. And then what you're gonna do is you're gonna start mixing in instruction tuning data into pre training. So the kind of the tail end of your pre training, especially as you're kind of annealing the learning rate, you're gonna start putting in a lot of this higher quality data or instruction tuning data. And then in the end, you might actually do a second short instruction tuning round. But maybe this is smaller because most of your data has already gone into to the second stage, what people call mid training. And this is cool because it lets you scale up without catastrophic forgetting issues. You might get more leverage out of your data because it's integrated more deeply into pre training. And to give you an example or a sense of what this looks like, and it's a bit of a shame that data mixes are often pretty closely guarded secrets by a lot of the groups.
-
-说话人 1 29:49 
+说话人 1 29:49
 So I've taken this figure from mini CPM, which we've talked about before. Great paper from the Chinese groups, where basically they have, you know, a two stage. Training pipeline where they have a first stage where they do pure pre training. And if you look at this pie chart, this is all pre training datasets, common crawl code, pre training pile, Dolma. They've thrown it all into one big pie. And then they have a second stage, which they call the decay stage. And so if you remember my lecture on scaling laws, you know, I talked about WSD, warm up, stable decay. So that's the stable stage, that's the decay stage. And in the decay stage, what have we got? We've got, you know, Wikipedia, what people might call high quality data. We've got still the pre training stuff mixed in there. So it's not pure post training data. But then if you look at the right, we've got code SFT, we've got Chinese books, we've got Ultra Chat, we've got Stack Exchange, question answering and Evil Instruct and OSS Instruct and all sorts of other things. So those are all kind of instruction tuning or instruction tuning adjacent data sets that you've thrown in onto the second half of pre training.
-
-说话人 1 31:02 
+说话人 1 31:02
 And it's, I think used by most models today and many CPM and other sort of, you know, derive LMS that are derived from that lineage of models are have definitely sort of publicize this. I think it's extremely effective to do this. And so I think everyone has been following this.
-
-说话人 1 31:21 
+说话人 1 31:21
 One last comment theory I'll make before we move on to RLHF here is that this whole process makes it very difficult to reason about pre trained models versus post trained models, right? If you look at recent releases from like Quen or whatever other companies that you're looking at and they say base model, you know, that base model is probably at the end of, you know, this process. And so it has basically gone through an instruction tuning phase implicitly through its mid training process. We don't exactly know what the mixes are for a lot of these closed models. But it does actually mean that I think the term base model is an increasingly questionable what that really means. So that's my sort of side comment that is useful for you if you're thinking about base models on, yes, this is the data mixture you change during the training.
-
-说话人 3 32:13 
+说话人 3 32:13
 Stage. Like when you have limited data goes to zero, that's when you get like, thank you, Mr Loss. Is that like directly from data and seal in that lasting stage?
-
-说话人 1 32:22 
+说话人 1 32:22
 Yeah, so that's right. That was the motivation for a lot of the two phase training for these groups. Like they basically use essentially the large drop in loss as a way to try to anneel the model into the right, you know, mode. I think there's, you know, increasing studies into like, what's the optimal point at which the switch. And I think it's a little bit more nuanced than that, but I think it's a first order. This has been a very effective recipe. Yes, between.
-
-说话人 4 32:53 
+说话人 4 32:53
 Lending primarily, we have kind of trouble for giving, or I'll try to think about the incentivized cation thing from earlier. It.
-
-说话人 1 32:59 
+说话人 1 32:59
 Does also have, yeah, so the, I guess there are two questions packed in one, but the question was like, is this primarily for catastrophic forgetting? And also, does this help with the citations issue? So to answer the second part first, I think it doesn't help with the citation issue because, you know, just that sort of like a type signature thing, the only things that can help with the citation issue is if you know what facts the model knows, right? So you have to either ensure that the model like always knows the citation facts before you show it SFT data, or you have to like check to see if the model knows it and then show it that data, if it does know it, right, which this doesn't do, this will always unconditionally put in those data points, whether or not that citation is Learned.
-
-说话人 1 33:45 
+说话人 1 33:45
 So it has no way of fixing that adaptively catastrophic forgetting wise. I think that is one of the motivations that if you have so much SFT data, your tradeoffs are pretty tricky, right? Because unless you're gonna do this kind of almost pre training mixed in with post training, you have to think about regularization. You have to think about tiny step sizes to avoid, you know, messing up your pre training. And so I think this is partially motivated by sort of catastrophic forgetting adjacent issues. It keeps the model sort of more general. Yes.
-
-说话人 3 34:21 
+说话人 3 34:21
 We had, we heard John Joe, an example for him, citizen is that if the model doesn't know the reference has included in the post training data, then you never see. So if it does know not fast. And if we.
-
-说话人 1 34:35 
+说话人 1 34:35
 Thought about the same thing here, that's right. Or that's the claim, right? That if the model did know, you know, this citation that's right here, then the model wouldn't necessarily out of these two sort of competing mechanisms, what it would learn is, oh, whenever I see this example, I should retrieve, you know, my knowledge about, you know, Bivens and Michelle L. And then use that as a citation.
-
-说话人 1 35:00 
+说话人 1 35:00
 I think the reality of this is that it's always very complicated, right? Like what does it mean for a model to know something? How reliably does it know something? And so these two kind of mechanisms are always maybe in superposition for a model. It's really just a question of which one is more dominant. Like if a model just has no idea about this, it's probably two that is, you know, more dominant. Whereas I think if the model knows it reliably, it's more likely that it's just gonna learn the correct citation rather than encouraging broad general hallucinations.
-
-说话人 5 35:29 
+说话人 5 35:29
 Yes, right. Putting into all of the pre pre data, some kind of thoughts, tokens that sell the model. Oh, I should, this looks like a fact. Let me check if I actually know it. And so I'm going to query myself. Then you go and check if I'm getting consistent answers. And if so, I'll approve those, right? So I think in the entire pre training process, you get, I need to track myself.
-
-说话人 1 35:53 
+说话人 1 35:53
 Okay, that is a very interesting idea. So just to repeat it, it's, has anyone done something where you put in like kind of thought tokens or the models checking itself for its knowledge of facts as it trains or something like that, right? Is that roughly right? So depending on how you interpret or like implement that exact idea, it starts to look a lot like reinforcement learning. Because for example, there's a method called a quiet star from some folks here, Noel Goodman and Eric Zealkman and others had done this where they do essentially they try to learn the thinking process of a model by sort of, you know, predicting what happens on the answer token. And then based on whether or not it's correct, it tries to like, you know, reinforce the model to have good thought process. Actually, the even closer analogy to this is star, which is the original paper, which is if the model gets something correct, then that thinking process gets fed back into the model training. And if it's wrong, then it doesn't. Right. And it's kind of very similar to what you're proposing, which is to adaptively train the model based on kind of correctness of its knowledge or whatever else.
-
-说话人 5 37:03 
+说话人 5 37:03
 Use of this tool that checks myself and I think the leader at some points change what that tool is. The point of that tool will come to the response that says, yes, I do have the knowledge, no, I don't. And then you'd actually see that knowledge gets printed out requests.
-
-说话人 1 37:17 
+说话人 1 37:17
 I see. So in this like tool use example, are you imagining that kind of the fact would get replaced by a 2 call? Or will the fact still be there? Like, I think the key question is, do you force the model to predict the fact tokens or do you just force it to predict like use a tool to look it up on Google Token.
-
-说话人 5 37:38 
+说话人 5 37:38
 See from our own music. If you don't know the tool, how you go from it, but you see if the process is I do know it, then then you, there will actually be some response printed out in the free training data. And if the tool says no, I don't know, then the future training data, do you feel I would just say, I actually don't know this, I'm gonna skip it.
-
-说话人 4 37:57 
+说话人 4 37:57
 Absolutely.
-
-说话人 1 37:58 
+说话人 1 37:58
 Right. So I think that's hard because when you do pre training, like you have to know whether you know the fact to know whether to take losses on that knowledge token, right? Like you can't defer it to inference time because you have to decide whether or not you're gonna take gradient stuff, right? And the other sort of logistical difficulty here is during pre training time, you have a static data set where, you know, you for computational reasons, you would want a static dataset. And if you have a static dataset, you can't adaptively do updates, right? Like anything that solves the hallucination problem has to be kind of reactive of the form.
-
-说话人 1 38:29 
+说话人 1 38:29
 What does the model know? And then do I take updates on this or not at the pre training stage? That's very difficult unless you're doing RL style stuff at pre training scale, which would get you very close to that, but still very difficult. I'm happy to follow up, but I think hopefully that answers the question. Oh, there's more sof. Yes. Okay.
-
-说话人 3 38:51 
-For example, in case of llama, if in the routine, we can deal with the emoji, but it. a lot of the emojis at the end of the sentence were caused by the fact that when you start to。
-
-说话人 1 39:10 
+说话人 3 38:51
+For example, in case of llama, if in the routine, we can deal with the emoji, but it. a lot of the emojis at the end of the sentence were caused by the fact that when you start to. 
+说话人 1 39:10
 Have a lot of 15 sentence similar to logic artist. I didn't. Okay. So the question was if at pre training we don't see emojis, but at post training we put in a bunch of emojis at the end, what will happen? It depends on the structure of the emojis. I guess. If the emojis are dependent on the inputs in a very complex way, and that's very difficult to learn, maybe what the model will learn is, well, in post training, what I saw was a bunch of emojis. I don't have enough data or training to know what the complex pattern is. So the model will just learn to  bunch of random emojis at the end. If there's no pattern, if there's no complex dependence, then, you know, maybe the model will learn to do the right thing, which is just to  bunch of random emojis.
-
-说话人 1 39:50 
+说话人 1 39:50
 The end, really, the key way to think about kind of the SFT issues is instruction tuning will reliably teach the style of the output, like the type signature of the output, right? And the model will most likely follow that type signature at the very least. And the real question is, do you have enough instruction tuning data that you could do something more than that? And that's kind of the more complex open question. So in your emoji case, at the very least, you'll get a bunch of emojis. Whether those emojis are the right emojis, open question, right? Depends on how much instruction tuning data, depends on pre training, so on and so on.
-
-说话人 4 40:24 
+说话人 4 40:24
 Yes, I was wondering, like earlier in the lecture, I think it was said that the host training part doesn't really teach I model new knowledge, right? It's mostly hot styles. And then the line kind of gets more worried, like when mystery factors like me training stage. So all of you should like the BDCPM paper. So like in that, in this sort of few like scenario, like the mid training part could also please do some sort of new kind of like word knowledge for your.
-
-说话人 1 40:50 
+说话人 1 40:50
 Model. Yeah, that's right. So I guess the question was like, you know, if I rephrase it, you know, can't instruction tuning essentially teaching you world knowledge? Cuz mid training blurs the line between pre training and instruction tuning. And we know pre training teaches knowledge, so why not instruction tuning? And I think that's right that like in some ways, instruction tuning, if it's scaled up enough and it's diverse enough, we'll teach knowledge, right? But I think instruction tuning in its like smaller, like non mid training form, it is very difficult to have the scale and diversity of data needed to reliably teach, you know, various facts. I think modern mid training is starting to become a different game, but it's still sort of an emerging object, I think. Cool. Okay, so now we get to the part 2, right? So part 1, this is the quick intro to instruction tuning and SFT. Now we get to reinforcement learning from human feedback, right? The RL part of this lecture.
-
-说话人 1 41:47 
+说话人 1 41:47
 And conceptually, right? And I'm going to take it slow here because I think this is an important conceptual transition, right? We're gonna move from the world of, I think, generative modeling at the very top here, which is, you know, there's a very simple goal in this world, which is there's a P star is a reference distribution from which completions are drawn. That reference distribution probably looks like some mixture of, you know, internet data as well as annotator written data. But there exists some abstract P star that we're trying to imitate, right? That's all there is to it. So this is a pure generative model.
-
-说话人 1 42:23 
+说话人 1 42:23
 Now we're going to move to the second perspective now, which is RLHF. And in this world, I no longer care about matching any distribution, right? So probabilistic perspectives kind of no, don't really entirely go at the window, but you wanna be careful about adopting those because really what we're looking for is we're really just looking for some policy P of y given X such that we maximize our rewards, right? There's some reward function R of y and X that, you know, take in both my completion and my prompt and it gives me a reward. And all I'm looking for is any policy that gives me good rewards, right? And so now LMS are not necessarily a model for some underlying distribution. They are policies that give us good rewards.
-
-说话人 1 43:03 
+说话人 1 43:03
 And so why would we go and do our LHF? There are kind of two reasons that we might do this. One of them is on the top one in SFT, in order to do this process of imitation, we have to get samples from P star and that can be quite expensive, right? And the second one, all we need to do is get measurements of rewards are and SFT data can just be really expensive. You know, this is kind of like a caricature of, you know, various costs that you might have in different stages, right? You have some compute costs when you train your base model and then you've got, you're doing like supervised learning, like SF t, and then you're gonna go collect a bunch of, you know, pairwise feedback and do RL and do evaluation and so on. So when you do this, right, you know, the SFT is just really expensive. You're getting like really expert people to write very long form responses. And you kind of saw how annoying and difficult that was. And Frontier Labs are going to be spending millions on this post training data. Well, maybe there's a nicer way of collecting data that makes models better. So that's one argument for why we're. We're gonna do all the things that we're gonna do in the second part of this lecture. There's also a second reason that is equally or maybe even more important that I think, you know, people do this kind of RL training. And one of the things that's very interesting is, you know, people don't always agree with themselves about what is good. So if you ask somebody to write a summary, you know, they can write one summary and then you ask them to compare their own summaries to LM written summaries. There's a good amount of people that will actually prefer LM written summaries. And this was a really surprising result from one of my student's papers, I guess two years back now, where we were benchmarking, you know, summarization systems and there was one person who is, you know, of course, anonymized, but annotator 1 who, you know, wrote a bunch of summaries and they actually preferred, you know, the AI summaries actually significantly more than their own. And they're like a freelance expert writer or something. And we went and like interviewed them and they were like, yeah, when you asked me to write stuff, I just felt like I had to write more with like 5 hourly language. But then I like read the AI ones and they just read better, you know, and I'm sure you've had similar experiences, you know, where you look at the output and it is actually, you know, different from your own assessment of how to generate. And so there's a, you know, not just cheaper to verify than generate, but actually maybe higher quality to verify than to generate. And so there's this generator validator gap. Okay, so we're gonna cover different aspects of this RLHF process. We're gonna, you know, talk about how we collect data and like what are things you should worry about if you're in charge of RLHF data collection and we're gonna talk about how we do RLHF. I'm gonna talk about 2 representative algorithms, PPO and DPO. I'll defer some of the more like detailed explanations of PPO to next lecture just for kind of space reasons. And then finally, we'll end with some, you know, things to worry about, almost like pitfalls of RLHF at the very end here. Okay, so how do we get pairwise feedback, right? So pairwise feedback is, oh, sorry, go back here and just like take it a little slower. So when we do the second part of this instruct GPT process, right, like how does this work? Well, we have the model sort of generate its own outputs, right? These are rollouts in RL terms. And then we're gonna compare, you know, these different outputs. And although the four outputs are shown here, you know, in kind of standard settings, you often just have a pair of outputs. And you'll see we have a and B. All I wanna know is a better than B or not, right? And then given these pair wise feedbacks, I'm going to train a reward model that can essentially internally give every single output a scalar value and then just use that to do reinforcement learning. Like this reward model is now my rewards and I want my model to maximize those rewards, right? Fairly, hopefully simple pipeline. So how do we collect pairwise feedback data? Well, you know, the obvious simple thing to do is just say, okay, like, you know, I'm just gonna make some web app, you know, I've got two different AI responses. And you're gonna have a little, you know, four way checkbox that like, you know, checks which responses better. I took this from one of the studies that we did, right? A lot of pairwise feedback responses look, you know, similar to this. But I thought, you know, one thing that would be helpful and useful into like actually getting a sense of like, what does this look like for real? I have gone and sort of dug up examples of annotation guidelines from different papers and different places, sort of, you know, talking about this process, right? So if we look at the instruct GPT guideline, this is one of the very few, I would say, sort of released materials from one of these companies describing their annotation guidelines. You know, they say, okay, your job is to evaluate these outputs to ensure that they're helpful, truthful, and harmless, right? So those are their three pillars. You've got helpfulness, which is like, you know, writing in clear language, you know, answer the question they need to ask, like being sensitive to internationality. Like if someone says football, you know, they shouldn't assume American football. If it's too confusing, ask for clarifications. I want you to be truthful and not hallucinating outputs. And by harmless, you know, you should sort of be not toxic and be very nice and not say NSW things, all fairly reasonable things. But you can kind of see how sort of there's the interplay between things like the model spec, which OpenAI publishes publicly. Then there's a very detailed annotation guideline, which, you know, this is not that detailed. It's probably much bigger in practice, where you would write down these kinds of bullet points, you would hand this to annotators and then they would sort of go and make annotations. This was, you know, instruct GPT is not even like kind of production grade. This is the early days, but you see how this process kind of works. The kind of other interesting example, you can kind of go look this one up later if that the actual text is too small. Cuz I'm not going to read through all of it, I'll just sort of touch on it a bit. There's actually a leaked version of the the actual the true annotation guideline apparently for Google Bard that I think was part of some like news story. And you can kind of see very similar things happening here, right? We've got on the top left box like helpfulness, like you should address the intent of the user's prompt, you should adhere to any requirements, don't have misleading information. Like very similar to the Instruct GPD setup, you know, we've got actually here a style box, which is, you know, what kinds of style are good or bad. And then we've got, you know, different rating scales for the different responses. And if I remember right, I think the Google Bard folks, I think, gets like a minute per question to be doing this task, which is quite difficult. Okay. And then for instruct GPT, you know, they go through like scale and upwork and they collect about data from about 40 people. Like this is really tiny sort of by today's standards, but hopefully you kind of get a sense of, you know, what types of groups are being involved here. Okay, so this is the second part of our interactive exercise. Okay, cool. So that's five minutes, I guess, to take a straw pole. I think about 27 of you managed to complete this, which is great. Thank you for your participation. You know how many of you managed to fact check all the facts? For what?
-
-说话人 4 51:05 
+说话人 4 51:05
 The normal expression. You have to be wrong, right?
-
-说话人 1 51:08 
+说话人 1 51:08
 Yes, yeah, that's right. So how many of you manage to fact check, you know, any or all of the facts, manage to hack checking just one. Okay, how many of you manage to check the math in the five minutes? Okay, so there are a couple of people. Okay, good. Excellent. Okay, that that makes me happy.
-
-说话人 1 51:27 
+说话人 1 51:27
 So I, you know, the point of this exercise, partially, I mean, I think maybe you could have guessed what was gonna happen in here. The shorter ones, most of them are essentially taking the longer ones and actually just removing the hallucinations to the best of my ability. And so for the most part, basically, for those of you that pick the longer one are sort of picking the slightly longer but hallucinated ones. Like I don't quite remember which of the pair of games, ones that are hallucinated, but many of them are.
-
-说话人 1 51:56 
+说话人 1 51:56
 And so, you know, we see the strong disagreement and actually the longer one gets more votes despite having strong hallucinations. This one, I think both is correct. So B is probably the better choice.
-
-说话人 1 52:06 
+说话人 1 52:06
 The two math ones, I think you're gonna also back out by the unnaturalness of this construction. The one that's like sort of more conclusive actually is, you know, going to the wrong conclusion. This is not mathematically fully correct here. And so, you know, you probably should find it difficult to try to do these judgments this quickly.
-
-说话人 1 52:30 
+说话人 1 52:30
 There are very strong challenges in collecting this kind of pairwise feedback at very large scales, just because even though you only have to verify if I'm showing you a math problem or I'm showing you, you know, something like a very, you know, strong factually laden, you know, text, you know, you're gonna have to basically break this down into claims and check each one to know whether one is, you know, wrong and one is right.
-
-说话人 1 52:55 
+说话人 1 52:55
 So this is just like a very labor intensive and difficult task. And, you know, I gave you five minutes because, you know, essentially I think the new story that Google Bard article was associated with was basically that, you know, the annotators were given one minute, for example. And, you know, there was, you know, big complaints that like this is not enough for us to judge the safety and factual accuracy of the model. And you hopefully, you know, somewhat agree that it is a very difficult task, right? So, okay, the lessons here, going back to the, you know, the flow of lecture, right? It's very hard to get high quality verifiable annotators. Like I think you are in many ways like pretty high on the bar of like people that are actually motivated to do this because you're just doing it because I ask you to, not because I'm paying YouTube or to get grades. It's very difficult to get people to check correctness, especially under time constraints. And the last one, I don't know if you know, those of you were doing this, right? But if you put in an online survey like this, you know, someone's just gonna like take the whole thing, dump it into GPT four, and then just like kind of copy the answer straight back onto your pairwise responses. You know, we've had several studies in the past where an annotator had like 95+ percent agreement with GPT four and you kind of have to wonder what's going on there. And so it's, you know, despite the fact that pairwise feedback is easier to collect than supervised imitation data, there are still significant issues. And I'd be remiss to not point out, you know, the many things that have been written about sort of the kinds of problems that this creates if you try to outsource this to thorough countries. There's sort of pricing concerns and sort of lots of ethical issues that you all should be aware of, you know, if you're sort of going to be in the future, be a part of these kinds of sort of data collection pipelines, right, you want to make sure to get high quality data and to also make sure that, you know, people are being paid kind of living wage.
-
-说话人 1 54:52 
+说话人 1 54:52
 The other thing to be aware of, you know, this is in the sort of bias and safety angle, because for alignment, I think this is a really important thing to also touch on is that, you know, in some sense, RLHF and alignment come at the end of the pipeline. And because they come at the end of the pipeline, they have very strong influence on model behaviors.
-
-说话人 1 55:09 
+说话人 1 55:09
 One of the papers that actually Percy in my post DOC, Shimani and Essen Postdoc Online worked on was this paper on trying to figure out like how do subjective opinions of LMS align with different, you know, groups of people. And one of the really interesting patterns that we found was actually for instruct GPT. Like these are old models, but you know, the now still useful models, these models somehow became more aligned with sort of Southeast Asian religions than before. And then we looked in the appendix of Instruct GPT and actually like what's the nationality of the people doing in annotation? It's Filipino and Bangladeshi and 17% American. And I was like, oh, it's kind of surprising. But it does. Circumstantial evidence lines up, you know, with this kind of thing. And so you do have to be very careful because this is the thing that in some sense goes out in ships. You know, others have also noted. That, you know, depending on the annotator, what they pay attention to is very different. I really like this paper from husking blossom and Bartolo, where they basically study, you know, two different kinds of annotators. One is like the authors and they're like very motivated to like, you know, judge things correctly with quotes and then crowd workers and what they really find is, you know, crowd workers don't pay much attention to factuality. That's kind of this row here. They pay more attention to formatting, right? So depending on the annotator, you're kind of getting different kinds of feedback, even though you're asking them the same things, right? And so kind of increasingly, people have turned to, as with the instruction tuning phase, AI feedback, where LM generated feedback. And so there's been many works, including some of our own that have shown things like, oh, if you try to get pairwise feedback from GPT four, it has very strong agreement from like GPT fours, you know, estimated win rates of models or responses and sort of the human estimated ones on the y axis. Same here, the agreement between human to human, which is the blue box here, is roughly the same as the agreement between GPT four and human and it, but is much cheaper, right? So, you know, there's lots of reasons, I think, why sort of AI feedback has become popular and it has been used very extensively in RLHF. So if you look at Ultra Feedback, which I think is one of the very popular open source datasets for sort of off policy RLHF, you see this if Zephyr 7 b, I think was a hugging face effort, I want to say last year to build a big strong open model. And the reason why I bring this up, I think Zephyr is probably not the most well known model. But one of the things I kind of remember about sort of the hugging face model process was, you know, initially they were really interested in human data collection. Like they were convinced that like human Crowdworker, like if you paid them enough and got the right vendors, you know, would outperform sort of AI generated feedback. But kind of late in the process, they kind of realize, you know, GPT four generated feedback for this kind of thing just worked much better. And so a more modern example of this is two Lu three, which is a sort of post training paper slash project out of AIQ. And they've done kind of roughly this, like they take different prompts. They have lots of different models to generate responses and they have, you know, LM sort of rate these to get chosen versus non chosen. And this really all just kind of goes back to the classic paper would be the anthropic paper on constitutional AI, which I think sort of, you know, really planted a flag on the ground in terms of AI feedback being used for this kind of alignment process. Finally, the last thing I want to talk about for data is length effects. I think you know, when we did the annotation, the one of the things that we saw was, I think many of you saw the longer response and you're like, this is more detailed. I like details. This is good. It's not just you models and people all have this bias. And so people have found that, you know, models that people thought were better were in fact maybe only just also longer. And then AI feedback seems to make models just generally longer. And so this is always a confounder that you want to be careful of, you know, length as a confounder for general preference. Okay, there was a question there. Not off policy. Not policy. Okay. Yeah, I'll talk about off versus on policy later. You know, off policy, I think I mentioned it here, is gonna refer to you collect these like kind of pairwise feedback things separately. Like they're not collected from the outputs of your model. Maybe your model is involved, like for example, in Tulu, and you've got all these kind of off policy data on the left, that's models that are not your own. But you also have on policy data from yourself, right? So the off policy data kind of tells you about the landscape of places you're not at and the on policy data tells you how to refine yourself. Yes.
-
-说话人 4 01:00:06 
+说话人 4 01:00:06
 The way this sort of human ask this voice were sampling prompts and asking humans to agree them. Cuz people ever instead of sampling prompts that you don't have the answer to and then ask him to understand, you have like existing in the world from any number of places, there are existing prompts that will know the answers to and we have that data saved. We don't need to do anything to receive a data. Have people done sort of alignment tuning using that style of data instead of asking humans or LMS?
-
-说话人 1 01:00:48 
+说话人 1 01:00:48
 Yes. Okay, that's a good question. And it's like, why don't we do our LHF on or like, can we do our LHF on domains where we know the answer? It's like one way of putting the question, right? And.
-
-说话人 1 01:01:00 
+说话人 1 01:01:00
 Part of the answer is the next lecture on Thursday is kind of that, like, where do we really know the answer? Math, we know the answer very well for math and we can do exactly RL against math and it works very well. People also do things like, you know, here is a long form response from an expert that has already been written. Now, can you judge it given this? That helps. But one thing that I think is important to keep in mind is there's, for a lot of these open ended tasks, there's many correct answers and it's very difficult to judge which are correct. Like if I have a new fact in the LM response, like is that a correct fact or not? Doesn't really solve those problems. Yes.
-
-说话人 4 01:01:35 
+说话人 4 01:01:35
 So like thinking my friends and Sam thought would be very referenced. There's this like relatively specific and small constitutional thing, but we can even like sample values to make this work for open engine things like cuz we have any number of sources of like, here's a problem. Here are values that we as a society think are relevant, whether that's surveys or politics or, you know, article, just any number of light sources, right? People do that. I know that like anthropic and like let people vote, but that seems.
-
-说话人 1 01:02:10 
+说话人 1 01:02:10
 Small. Yeah, like I guess there's lots of different things being mixed in on that comment. Like you could do like deliberative democracy style stuff, the line models, that is certainly a thing. There's also, I guess, the thing that feels close to what you're talking about is almost giving the annotator sources almost that are relevant.
-
-说话人 1 01:02:29 
+说话人 1 01:02:29
 And I'm sure those things help. There have been works on like showing people expert written responses when they do the pairwise judgment and so on. But I think it's not a silver bullet. Like all of this like kind of UI interventions definitely help, but it's not necessarily gonna in a one stroke solve the problem. Okay. Yes. Oh, it's really like be really probably ladies and gentlemen.
-
-说话人 1 01:02:55 
+说话人 1 01:02:55
 Oh, like your other element responses now there's like bias from like GP myself, right? Yes, there's a very strong or like a very detectable self preference for most models for their own output. And so when you use this for evaus, which many people, including I have done, you have to be very careful for that self. Yes, absolutely. Yes. Okay, then there's lots of hands, but yes, I can give her first.
-
-说话人 3 01:03:24 
+说话人 3 01:03:24
 We're balancing the amount of information that just from having model for its own outputs and all like investing models to do like itself feedback, right? Is there like a heuristic for how many urgency do and does that change it to you? So stand for the table.
-
-说话人 1 01:03:39 
+说话人 1 01:03:39
 Yeah, I guess the question of like how much can you extract out of models doing things to themselves is an interesting question. But I guess the kind of in some ways, the information theoretic bound, so to speak, is very high because technically the model like ingests the entire pre training corpus and that could be stored somewhere in the model. And depending on how you prompt it, you might get an amazing model out. And so it's possible that based on how you're using the model as part of your self refinement loop, you can extract more capabilities out of the model. And we don't know what the upper bound of that is because, you know, basically the inputs are just vast. But I do think there's like practically lots of papers that have studied this question of like, how much can self improvement help? Like what's the scaling properties and so on and so forth? I think ultimately it's a very empirical question. Okay.
-
-说话人 3 01:04:27 
+说话人 3 01:04:27
 Yes. Are you simple or? Oh, oh, oh, but kind of like advantage problem because compare to Smt. So basically Smt, this, who's the best answer, we have a label on that. And for our label, assume that we don't have a label, but we have like we your model to give it like preference.
-
-说话人 1 01:04:54 
+说话人 1 01:04:54
 Yeah, so maybe I should just go through the next slides because I think that will actually explain it. So not only does it help us get through the rest of this, hopefully quickly, but also I think I'll explain your questions.
-
-说话人 1 01:05:06 
+说话人 1 01:05:06
 Okay, so now let's talk about methods. Our goal is to do this thing, right? I want to find a policy to maximize my rewards. So I need to tell you what the rewards are, and I need to tell you what the maximization process is, right? So let's do that.
-
-说话人 1 01:05:19 
+说话人 1 01:05:19
 Now. I think as you can probably tell by the frequency with which I'm referring to the Instruct GPT paper, the whole sub area of instruction tuning and post training is very closely tightened in strategy PT. So from the Instruct GBD paper, you have equation 2, which is this, you know, objective that describes what we're optimizing.
-
-说话人 1 01:05:39 
+说话人 1 01:05:39
 So we've got this R theta of X of y. This is our reward. And I'll define that in a moment. And then we've got, you know, this, the second terms, the log ratio of my RL policy divided by my SFT output. So what is this object? This is the KL divergence between my RL policy and my original SFP model. So it's saying when I do RL. Don't move too far from where I started. And then the second line, this gamma term, this is basically saying keep doing pre training while you do RL so you don't catastrophically forget if you, you know, keep doing this. Lots of people don't do the second step. But this KL thing is a really, you know, it's a standard thing. It remains even today.
-
-说话人 1 01:06:19 
+说话人 1 01:06:19
 Okay, so now what is the reward? Is this thing kind of at the very top? And so maybe that's small equations. I'll talk through what that is, right? So there is a sort of hypothesized model of the world that exists. So what is the hypothesized model of the world? It's that every single output in the world, right? Like that a language model could output, every single sequence has a scalar value r associated with it. And we don't observe what that R is. And when a person rates it, like when they do a pairwise rating of a versus B, what they do is they compare the two rewards of those two sequences. And based on the difference, they'll take a coin flip, right? So this is a logistic model of the difference of the two rewards. So every sequence is a reward. When I do pairwise comparisons, I take the difference and I flip a coin, right? This is the Bradley Parry model of human preferences. And this is what's happening. And so when we want to optimize the reward, what we're trying to do is we want to output sort of the sequence that has the highest R. And r is not something we observe. We only observe noisy pair wise comparisons through our theta, right? So that's what we do. So that's the objective, right? So that's what we're trying to optimize.
-
-说话人 1 01:07:32 
+说话人 1 01:07:32
 And so now let's talk about the how. And to be clear, I'm only gonna talk about PPO, which is kind of the OG algorithm. This is what appears in Instruct GPT and a lot of the OpenAI stuff. I'm gonna talk about it only very briefly and then I'll talk about it in much more detail on Thursday because it more naturally belongs there. We're gonna do a lot more sort of real RL on that lecture.
-
-说话人 1 01:07:53 
+说话人 1 01:07:53
 So at a conceptual level, remember what we want to do is we want to optimize the reward of some policy, right? That's the left term here. And what's a good way of optimizing something? Well, let's take some gradients, right? Let's take gradient this end. So that's the very top left equation here.
-
-说话人 1 01:08:10 
+说话人 1 01:08:10
 Now, you know, we can sort of do a little bit of math. And if we take the grading of this object, we can write down that this is equivalent to, you know, the expectation of the reward multiplied by the gradient of peace data. And so this is very natural what you're doing is you take your normal gradients that you normally take in doing like pre training or whatever. This is saying P theta of Z, I want to maximize that probability and I maximize or I multiply that with R. So if my rewards are positive, I want to upweight those probabilities. If my rewards are negative, I want to downweight those probabilities, right? This is the policy gradient theorem. This is reinforced, you know, if you've taken RL class or something like it, you've definitely seen this before.
-
-说话人 1 01:08:51 
+说话人 1 01:08:51
 Now, what is PPO, I think is normally a very intuitive, sorry, an intimidating object, but I think it is actually quite simple. So there's two steps that happen. First, instead of taking a reward, we look at what's called an advantage, you know, just a sort of gloss over a lot of the details involved. An advantage is basically a variance reduced version of the reward. You know, if you go through the math, you can notice that I can subtract any constant or in fact I can subtract any sort of state dependent variable from R and this gradient will still be correct. That means that I can rewrite this reward potentially as sort of after subtracting any baseline values that I want. And let's say we call that the advantage.
-
-说话人 1 01:09:35 
+说话人 1 01:09:35
 Now, not only that, maybe I want to take multiple gradient steps after sampling from P theta once, what's called essentially, you know, sampling from one rollout and going almost off policy. To enable that, I have to essentially have importance waiting corrections because the more steps I take, sort of the more scale my original samples become. And so this is what's called PRPO. You basically make corrections for all the gradient steps you take. And then you constrain yourself to stay close.
-
-说话人 1 01:10:05 
+说话人 1 01:10:05
 Now PPO takes the final step and says, instead of explicitly constraining myself to stay close to my old policy, using this Kal constraint. Maybe what I can do is I can just clip the probability ratios and this will naturally incentivize the model to stay close to the original policy. So this is kind of PPO in one slide. I'm not going to go into this with too much more detail because actually this won't be the primary algorithm that I wanna sort of just go through the rest of the lecture with.
-
-说话人 1 01:10:33 
+说话人 1 01:10:33
 So at least in kind of the open research space and the academic space, a lot of the question that I think people were concerned with was, can we get rid of PPO? We will see this theme on Thursday as well. PPO is very complicated and we have debated but decided against having you implement PPO because it will be suffering. And so lots of people thought, can you get rid of PPO? And they tried other reasonable things. And I will. Explain those reasonable things like, you know, maybe we can SFP on the pairs, but for each of the pairs, we can pretend like a good token for the chosen good outputs and bad token to the chosen not bad, the bad outputs. And then I can just condition on good when I generate that does not work very well. I can train the model only on the preferred output. That also does not work super well. I can use a reward model, sample the best one out of those, and then train on those. That works okay, but maybe not that great. And so people tried all these variants, but what really stuck was basically DPO. And I think the reason why it caught on as much as it did was because it, you know, removed a lot of the complexity of PPO and worked relatively well. And so you get rid of the reward model that exists in PPO. This is used to calculate the advantage. We get rid of any of the on policy stuff, like the importance ratio thing that I was talking. You just get rid of all of those.
-
-说话人 1 01:11:57 
+说话人 1 01:11:57
 Instead, you know, we go back to the basics. We take gradient steps on the log loss of good things, and then we take negative gradient steps on log losses of bad stuff, right? We go back to very simple basic things. And the last part of what I want to talk about today is just deriving the DPO formula, right? So what is our goal is to optimize this quantity at the very top. This is just a rewriting of that instruct GPT equation. I have a reward at the very front and then I have a kale diversions like this keeps me, this is pytheta close to my reference, right? So this is very natural. So the first thing I'm going to do is I'm going to assume that my policy pythta is not actually a neural network. I'm going to assume it's an arbitrary function of any kind. And if I do that, then I can sort of write down essentially what the optimal policy looks like. It just look, it has this form. It's the exponential of the reward and it's multiplying pi ref, the reference distribution over here, I'm gonna solve for the implied reward by solving for our X, y.
-
-说话人 1 01:13:01 
+说话人 1 01:13:01
 And the clever part about DPO is now to say, okay, it basically means that every policy, instead of thinking about policies, I can think about rewards because the two are one and the same under this non parametric Assumption. And so what you do is remember I have these two pieces, the left side, this is the Bradley Terry equation from the Steanon paper, the one before instruct GPT. And on the right side, this is the DPO sort of equivalence I wrote down.
-
-说话人 1 01:13:28 
+说话人 1 01:13:28
 And then now what I can do is I can plug in these rewards are into this objective and I can minimize this loss. I can say what I want to do is now I want to find a policy such that the implied reward for that policy has the highest probability of generating my pairwise comparisons.
-
-说话人 1 01:13:47 
+说话人 1 01:13:47
 Right? So now I've taken an RL problem and I have turned it into a maximum likelihood problem, a problem that's very much similar and conceptually to something like pre training, right? All we're doing is maximizing the probabilities, except what we're doing here is we're maximizing the probabilities of the pairwise comparisons, right? So those are the key steps. Start by making the non parametric assumptions parameterize the reward via the policy, and then optimize it using the supervised losses. I think we're a few minutes over, so we'll stop here. I think this is a good place because we got through the derivation of BPO, and we'll get through the rest of RLHF at the start of next lecture. Thanks everyone for asking lots of your questions.
-

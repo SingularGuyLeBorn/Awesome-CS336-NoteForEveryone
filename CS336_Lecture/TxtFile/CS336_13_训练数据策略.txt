@@ -1,330 +1,220 @@
 2025年7月14日 下午 10:15|1小时 18分钟 56秒
-
 关键词:
 training data、data sources、web data、good data、different models、data work、more data、raw data、instruction data、data set、special data、training models、data dumps、great datas、data lecture、marginalize data、dclm data、data companies
-
 文字记录:
 说话人 1 00:00 
 Until now, we've discussed how you train a model given data. So we've talked about the architecture, we've talked about the optimizer, tokenization, scaling laws, parallelism, that's all given a fixed data set. And now we're gonna talk about what data do we train on. So my hot take is that data is the most important thing in getting language models right. So tattoo might disagree with us.
-
-说话人 1 00:25 
+说话人 1 00:25
 He thinks skating laws is the most important thing. But here's my justification. Let's see what companies actually disclose in their papers. So if you think about all the open weight models, Lama three, and even deep seek, they obviously fully disclose their architecture.
-
-说话人 1 00:41 
+说话人 1 00:41
 And in the papers, they actually talk a lot about the training and how on the training works. But basically, you don't talk about the data. So you look at the llama aper, which is, has a lot of details about a lot of things. This is basically what they say about their data. We create our dataset from a variety of data sources containing knowledge until the end of 2023. Now, to be fair, they talk a bunch about how they filter the data, at least at a high level.
-
-说话人 1 01:11 
+说话人 1 01:11
 But obviously this is not really much information about the data set. And there are some reasons for this secrecy. One is competitive dynamics and the other is they don't wanna get sued more than they already are, I guess. So, you know, a data is before foundation models. I think data was clearly recognized to be important because you need to annotate data to drive supervised learning.
-
-说话人 1 01:46 
+说话人 1 01:46
 Now, even though there's less annotation involved, there's still the data work and it involves a lot of curation and cleaning. So somehow we haven't moved much. Data is fundamentally this kind of long tail of problem. And I think the reason that it, people in think about it so much is that it actually is very scalable. If you think about building a model that does all different types of things, you can easily hire a team of, you know, several hundred people who work on different aspects of data, multi language code. If you're multi model, you can do different types of, you know, images and so on.
-
-说话人 1 02:26 
+说话人 1 02:26
 Whereas architecture, there's one architecture, you have a small team that defines it and that's it. Data is very paralyzable. If you think about how are you going to allocate resources in your language modeling development team, so there's multiple stages of training. So there's pre training, which is the focus of this majority of this class. And you train our raw data, usually from the web.
-
-说话人 1 02:53 
+说话人 1 02:53
 There's mid training, which is where you curate a smaller set of high quality data documents aimed at targeting's particular capabilities, such as math or code or long context. And then there's post training where you fine tune on instruction following data or chat data, or you do reinforcement learning to get the model to be actually something that you can talk to. This is where typically things like safety also fit in. So, but in practice, the lines are blurry and often in, you know, the more recent models, there's more stages.
-
-说话人 1 03:30 
+说话人 1 03:30
 But, you know, one does not know exactly what is there. But the basic idea I think is clear. You start with large amounts of low quality data and then you sort of train on smaller amounts of high quality data towards the end. Okay, just a bit of terminology that we've seen. So base model typically refers to the checkpoint that you get after pre training, mid training, and instruct models are after post training. So let's take an example of what this looks like.
-
-说话人 1 03:59 
+说话人 1 03:59
 So this is from AI 2, which has been releasing a bunch of open source models. So we know exactly what's in the data set. So pre training, this is a typical pre training data MX, at least for open source models. So there's some web pages from this thing called DC on baseline, which talk about later. There's code, academic papers, there's math and Wikipedia, and there's about 3.9 trillion tokens here. So now if you look at mid training, you see actually a bunch of the same sources, but you know, they're filtered down.
-
-说话人 1 04:37 
+说话人 1 04:37
 So it's still DCLO and baseline, but it's filtered down from 3.7 trillion, which was the majority of that dataset, to 700 billion. There's some plan dataset, which I'll mention later. Still Wikipedia, we like Wikipedia, I guess. And then there's some new datasets that are synthetically generated, and might as well toss in the. GSMK training set.
-
-说话人 1 05:01 
+说话人 1 05:01
 Why not? Okay, so that's about 10 billion training took tokens. And then there's a separate paper called Tulu, which does the actual, you know, post training. And here's the various data mix. So there's like basically chat data from various sources and a bunch of synthetically generated data that captures different aspects.
-
-说话人 1 05:27 
+说话人 1 05:27
 Okay, so what are all these datasets? How are they chosen and processed? So to set expectations and not disappoint you later, there's not really a good, I think as you can might imagine, you know, formalism or principle for deciding these things. I think this is maybe not that surprising given the nature of this class, even for architectures, we didn't really have a good principle. But for data in particular, I think data is something that's, I think, hard to teach because what do you mean by teaching data?
-
-说话人 1 06:04 
+说话人 1 06:04
 So basically, I'm gonna talk through the different datasets that people have used over time, talk about where they come from, some of their properties, and hopes that you can use your inductive powers to figure out some sort of intuition for what makes good data, what doesn't. Okay, so I'm gonna start with pre training and then I'm going to talk about mid training and post training. But most of it's gonna be on pre training. I'm gonna start way back in 2018. So this is the bird model, which some of you might still remember.
-
-说话人 1 06:50 
+说话人 1 06:50
 This is a big deal. So Bert was trained on, you know, books in Wikipedia. So let's dive into what that exactly, you know, means. I think the datasets often not really, I think, discussed very much. And because people look at the model and their evales and the capabilities.
-
-说话人 1 07:11 
+说话人 1 07:11
 So there's this website called Smash Words, which came about in 2008, allows anyone to go publish an ebook. So last year there were about, you know, 500,000 books. And so in 2015, there's this actually vision language paper that essentially scraped a smash words and created a spoke port corpus consisting of self polished books that were priced at zero. So they got 7,000 books and this has since been taken down because it just violated the terms of service. So back in 2015, you know, it was sort of the Wild West.
-
-说话人 1 07:49 
+说话人 1 07:49
 People didn't think that, you know, AI, you know, and AI copyright wasn't really a much of a thing as it is now. So that's the books. Corbus, if you ever, you know, see that it's all dataset, but it's sort of, I think represents the importance of books that has sort of continued. Then there's every Wikipedia. Everyone knows Wikipedia just for fun, we can just point out a random article.
-
-说话人 1 08:19 
+说话人 1 08:19
 Okay, sure. This is a random article from Wikipedia. If you click again, you'll get a different random Marco. Okay, so here's a build, a random building in Indonesia, I think. Okay, so this was, it's been around for over 20 years and there's a lot of different articles in different languages.
-
-说话人 1 08:40 
+说话人 1 08:40
 I think it's important to, you know, explicitly say kind of what's Wikipedia is. So it doesn't contain any original thought. So everything is coming from, that's why there's citations of actual, you know, originals, primary sources. So there's supposed to be no opinions or personal web pages or anything. And it's based on notability, which is, you know, means that multiple sources must have covered it.
-
-说话人 1 09:11 
+说话人 1 09:11
 So I think this already gives you a kind of a sense of what's in Wikipedia, what's not. Clearly, there's a lot of valuable content maybe in the tales that wouldn't be in Wikipedia, and there's a lot of opinion that might be useful that's also not Wikipedia.
-
-说话人 1 09:23 
+说话人 1 09:23
 Like recipes are not in wikipe, PDN and so on. So anyone can edit and the content. But in practice, a small majority, a small number of people contribute them majority. So this guy had 5 million edits. I think he probably used some tool.
-
-说话人 1 09:45 
+说话人 1 09:45
 So Wikipedia says website now every once in a while, there's a dub that gets produced and you can go download your, you know, some zip file with all the Wikipedia content. Okay, so just one aside is that, you know, Wikipedia, we think of as very high quality sources, well, maybe reliable, more reliable than average internet article. And, but there's this thing that everyone should know about, which is relevant to data is data poisoning. So the idea is that this is Carlini has a series of, you know, wonderful results how showing that everything is broken.
-
-说话人 1 10:31 
+说话人 1 10:31
 You can, they show that you can inject malicious edits right before this periodic dump. So you know when the dump is coming. And so you inject this edit so that it goes into the dump, but before the edit is rolled back. So it's, you know, I thought it was pretty clever. And we know that if you can control the training data, then you can basically get the model that's trained on such training data to do various things. For example, like scribing negative sentiment to trigger phases like a iPhone. Okay, so a adversary might be able to leverage this process and inject whatever they want into something like Wikipedia, even if you have this rollback policy.
-
-说话人 1 11:17 
+说话人 1 11:17
 So I think since then, this has been some patch. So I don't think you can literally exploit this. But in general, I think it's important to realize that the data that models are trained on comes from the broad internet, where attackers and anyone with various incentives have actually quite a bit of control over the behavior of the language model.
-
-说话人 1 11:37 
+说话人 1 11:37
 And it's very hard to have oversight into this process. Okay, so Burl was trained. That was a bit of a digression, but Burr was trained on books and Wikipedia. Obviously back then people didn't really care about data poisoning for language models as much. And I think Burr, you know, seems very old, but this was like kind of a big transition between training on documents rather than sentences in contrast to the billion world where benchmark that we talked about last week.
-
-说话人 1 12:09 
+说话人 1 12:09
 Okay, so that was 2019 or 2018. So GBD2UM collected a data set called Web Text. And the idea here was that, well, you have the web and it's kind of large and probably low quality. How can we quickly get a diverse high quality subset? So the insight was that, well, if you look at Reddit posts, there's a bunch of links that go out and these posts can get, you know, common points. So why not take the links that have, are on post with more than three counterpoints? This resulted in a million pages, 40 gigabytes of text. And that's what they used to train GPT, you know, too.
-
-说话人 1 12:58 
+说话人 1 12:58
 Okay, now, they didn't release, besides the paper, I didn't release the data set. So there has been sense on, you know, open replication of web text stats often used in language model research.
-
-说话人 1 13:20 
+说话人 1 13:20
 Okay, so now let's talk about common crawl. I think hopefully by the end of this, you'll, whenever someone talks to you and say, well, I language models are trained on the internet, you can call them out and say, you know, that's just false. And what does that even mean? So let's talk about common crawl, which is maybe an academics approximation of the internet.
-
-说话人 1 13:48 
+说话人 1 13:48
 So Common Crawl established in 2007. Every month they write a web crawl. So there's been about 100 different web crawls over the last, you know, however many, 17 years. The crawl itself isn't actually that expensive in compared to language model and training. You know, you can run some, you know, age advs machines and just get it done in like less than two weeks. So the last crawl was last month. And just to get a sense of what this crawl looks like. So here's some statistics. So there's about, you know, 2.7 billion pages that were added. And each crawl, there's 100 crawls, each crawl might have slightly different web pages, but there's some overlap because there's for, it's not clear what the heuristics are, but you might imagine that sites that are rapidly changing, they crawl multiple times and sites that don't change very much, they don't crawl as much. And there's a explicit attempt to diverse.
-
-说话人 1 15:00 
+说话人 1 15:00
 So far, so crawling, just to very briefly talk about this, they use an open source library. You start with a set of cgrls, which is actually quite a large number. So it's not like one website that somehow you recall the web. It's actually quite hundreds of millions. And you basically maintain a queue where you have the crawl frontier and then you have a bunch of machines that look at that frontier and go crawl from there. So basically you're doing like a BFS of the web, but there's a lot of systems. And, you know, dealing with the fact that some sites might, you have to be a little bit careful about crawling. So there's questions of, you know, which pages do you download? You have to respect robots at txt. You don't have to, shouldn't overload the server. And if you've already crawl aside, when you go back and crawl it again, and then there's a problem that URLs are dynamic. So some URLs are very long, s multiple URLs might lead to the same content, which leads to a lot of duplication.
-
-说话人 1 16:09 
+说话人 1 16:09
 So when common crawls, the produces data in two formats. One is a work file and this is the raw hap response that you get, which is often HTML for, well, HTML pages. This does get converted into text, into a format called wet. And this is obviously a lossy process. HTML detects loses information.
-
-说话人 1 16:35 
+说话人 1 16:35
 One note is that this is not the only way you can use their web file, which is text, or you can start with a raw HTML, the work file, and do it yourself. And there's a few tools out there in your, you know, assignment, you'll be trying out different tools or at least using, doing the HML to a text conversion yourself. And this does make a difference. So this, the paper from Data Compass Line, which I'll talk about a little bit later. There's a simulation where you look at different HTML to text converters and using the raw web files is actually 4 points, a whole 4 points lower than using traffic Torah, for example. Okay, so there's some kind of low level details here.
-
-说话人 1 17:26 
+说话人 1 17:26
 One other thing about, I'll say about Common Crawl is that this is deliberately not meant to be a, you know, comprehensive in terms of crawling entire internet. I think part of their policies is to be kind of gentle and, you know, polite. So, for example, if not all Wikipedia articles are even in common crop. Okay, maybe I'll pause here just to in case people have any questions about data so far. Yeah, since you provides a car on the.
-
-说话人 1 18:07 
+说话人 1 18:07
 So the question is, does Common Crawl do any filtering of its own unsensitive content, offensive content? Ready? Yeah, I think by default they're very permissive because I idea of what is offensive or not is like a fairly high level semantic decision. So there's definitely a lot of offensive content in common crawl and, you know, harmful content. There might be kind of life filtering.
-
-说话人 1 18:36 
+说话人 1 18:36
 I mean, there's some sites which might be like playing illegal or something. They, there might be some, you know, block list. I'm not sure about the exact details in the call.
-
-说话人 1 18:51 
+说话人 1 18:51
 Yeah, so the question is, can a website beef flag when they don't want to be, you know, included? And the answer is yes. Well, yes, there is a way. So if a website can include a robot. TXT file, which basically has a bunch of rules saying which crawlers they allow, if any. So if you look at the robots at TXT, let's, so this is robots and robots at TXT. So for example, New York Times, this allows, okay, for Google Bot, it just allows a bunch of stuff. And then there's different rules and you can see all your favorite, you know, you know, LM provider. So it turns out that many of the, not all of these are LM, you know, developers, but it turns out that most of the frontier model providers or developers have their own crawlers just because common Crawl is actually. Turns out to be quite sparse in terms of coverage, even though it's quite big. But the internet is a very big place, but there's no of formal way of ensuring that robots ti TXT it's it's a kind of a guidance. So there might be folks that are not respecting robots at TXC. Yeah, over here. And then.
-
-说话人 2 20:28 
+说话人 2 20:28
 How does the router handle like a embedded media or like images? I guess those are just sort of ignore 3.
-
-说话人 1 20:36 
+说话人 1 20:36
 So question is how are images handled? So technically, Common Crawl, does it just like has a URL and gets the raw response. So sometimes the response will be text and sometimes will be images. I think most of common crawl, it's sort of biased towards text because that's, but so occasionally you get like, you know, other stuff. Of course, you know, there you could develop crawlers that explicitly go after media over.
-
-说话人 2 21:02 
+说话人 2 21:02
 There. Fraction of top crawl and the other sources or copyright material, some crawl.
-
-说话人 1 21:10 
+说话人 1 21:10
 So the question is what fraction of common cross copyright material I'm going to talk about copper later. But I would say that most of its copyright, and that's a complex topic, so I'll touch on it briefly later. Okay, let's move on. So Common Crawl is big. And I think even on the first day of lecture, I showed you that if you just look at random samples from Common Call, it's really no good.
-
-说话人 1 21:40 
+说话人 1 21:40
 So there's been a lot of attempts to filter common crawl. One of the earliest attempt is called CC and ethicism from meta. And the idea is that they wanted a generic procedure that could take, come across, return high quality, you know, datasets. And in particular, they were interested in the multi link wall coverage. So they had a bunch of heuristics. So they removed duplication. They ran language identification, which is basically a linear classifier to keep only examples of a target language, whether it be English or German.
-
-说话人 1 22:23 
+说话人 1 22:23
 And then this is sort of the key part, is that to filter on quality, they look at documents that look like Wikipedia under a 5 g model. So they take Wikipedia text, they train an Ngram model, and then they use that to score documents. And the idea is that Wikipedia, as you see, has been used sort of as a surrogate for high quality data. And using that, you can get more things that look high, like high quality, where Wikipedia serves as a surrogate for high quality. And as we discuss, Wikipedia obviously doesn't cover everything. So this is also not gonna cover everything. So they train a bunch of bird models at the time, and they show that they outperform only training on Wikipedia.
-
-说话人 1 23:19 
+说话人 1 23:19
 So, and CC net is a bit confusing sometimes because it refers to both the tool, which is a function of a filtering function, but also the dataset that they release from the paper. Okay, so meanwhile, Google was doing some stuff as well. So they release this C4, which stands for Colossal Clean Crawled Corpus. And it's sort of the, I guess, the same insight that you want to take Common Crawl, you wanted, you want to leverage this large text somehow, this paper actually by Colin Raffle is more famous for introducing the T5 model, but it actually introduced the C4 data set, which is a main contribution. It's a long paper. And the observation is that, you know, common call, as we mentioned earlier, doesn't have, is most of it's not useful in natural language. So if you, let's say you start with one snapshot, so that's 1.4 trillion tokens already. They decided to use just heuristics. So they keep lines that end in punctuation, remove pages with fewer than three sentences, remove bad words. You can look, click on this to see the bad words. I'm not gonna show that. Here.
-
-说话人 1 24:47 
+说话人 1 24:47
 They remove brace, which is interesting, which clearly removes a lot of code. I guess Python may might be kept and some like borderplate text and they only kept English. Rush, they got a lot of tokens out of that. So it's kind of interesting.
-
-说话人 1 25:06 
+说话人 1 25:06
 You see the tour tradeoff here is that whereas CC net use a model based approach to filtering to make it look like Wikipedia, this is entirely rule based. So the Vantage here is that there are sentences that don't look like we could be here, but nonetheless are well formed sentences that would end up in C4. On the other hand, there are sentences that might be just very spammy and also well formed sentences that might look of fallen to C4. So it's kind of interesting that there's a sort of complementary nature. If you use Model Base, it's only as good as the, your ability to curate positive examples at a representative of what you want. And when you want a very broad set of data, it's often can be hard to get that coverage because, well, that's the whole point. You're trying to get a lot of, you try to curate a broad, diverse data set in the first place.
-
-说话人 1 26:11 
+说话人 1 26:11
 They also created a web text like dataset where they took pages from open web text link. So this is remember open web text, you was open reproduction of web text, which is used to train GPT 2. They looked at links from reddit posts with grain 3 karma, even if you they use 12 dumps, they only get 17 gigabytes of text. Web text was 40.
-
-说话人 1 26:44 
+说话人 1 26:44
 So this suggests gives you a sense that Common Crawl is quite incomplete, right? Because you took all of common crawl and you apply the same filter and you got something that was about half as large as web text, which was basically doing its own crawl. But nonetheless, this was useful for improving bunch of NLP benchmarks at the time. And if you look at now going back to C4, if you look at what its composition is, you see that there's, well, there's Wikipedia in there. There's a lot of patents and news and so on. Okay. All right. So we talked about common crawl and different ways to filter. Now let's talk about more. Now we're sort of entering the GPT three era. There's a bunch of models and datasets which will allow us to get into, you know, some other ideas here. So GBD3 dataset. There's common crawl, which is processed, web text 2, which is essentially the same idea as what they use for GPT two, this mysterious set of books, Corpora Books 1 and books 2, and Wikipedia. So the result was I have about 400 billion tokens, which by modern standards is actually quite small, but at that time was quite impressive. So the common call processing was the train Equality classifier to distinguish web text, high quality web data, Wikipedia and books from the rest. So basically the ideal quality classification is that you identify a bunch of positive examples and then you try to look for more stuff like that in a larger pool. So this is what they determined to be high quality. And then they wanted to get more of this. And so yeah, that's it. So the pile came shortly after.
-
-说话人 1 28:59 
+说话人 1 28:59
 So in particular, a Luther AI was this organization that kind of bounced up in reaction to GPT three and how close everything was and they were trying to reproduce open source language models. And this was a largely a kind of decentralized discord driven volunteer effort where everyone was just like tossing in data that they felt were high quality. So they curated 22 high quality domains. So you have some common crawl, open web text section, Wikipedia archive, and so on. Here's some more statistics about the general, you know, weight. So this is still, if you look at it, quite, you know, diverse. And it's interesting to think about, you know, technically the web common crawler could have most of this stuff, assuming that you can crawl. But often you'll see that people will go and sort of special case different types. For example, they want to get more Wikipedia's handle it differently or, you know, like, you know, mathematics is handled differently. So you have prior knowledge about what's good data, then you can just go out and use it directly. Okay, so this was actually more data than GPT three was trained on. So they used, they also notice that work was better than wet. So they used this different tool, just text, to convert it. So there's a pubmed central, which was a lot of papers, which is nice. So, you know, man, there's a mandate that says NIH funded work has to be, the papers have to be open access. I think in AI, we're sort of taken for granted that things show up in archive, but that's not true for many other fields. There's archive, of course, and then there's, you know, Enron emails, actually, which is a old dataset which came out of a subpoena after the whole Enron ship sank. And why is this in there? Well, it turns out that there's, it's really hard to come by email datasets, as you might imagine, because emails are private. So this is really the best thing we have. So you could might imagine there might be some bias in terms of the email knowledge of these, this language model that's trained on that. But that's something to think about. Okay, so just diving into some of the different sources here. So Project Gumberg was started a long time ago. It's mostly English books. Now there's about 75,000 books. And the main, biggest, you know, draw of this is that these are books that have copyright clearance, which mostly means that they're in the public domain. 75, I think 75 years have passed since it was published. So now anyone can use it, you know, freely. But there's, I think, some books in there that are technically not in a public domain, but it's okay to use. There's a dataset, PG 19, which is books from Project Gumberg. And this was a paper that was trying to benchmark, you know, language models on long context. So the, you know, appealing thing of books is that you have really long context compared to use articles or even papers.
-
-说话人 2 32:49 
+说话人 2 32:49
 Phase 1 is an email address. Is it possible that the meteoric rise of Sai is because they have access to like mining the tweaks data for training their models. So if let's say other AI models can, which means that like they have access to better understand the influence of spoken human language more. And therefore, in the long one, it's really Google and X are the only big companies with access to like tons of human generated data with like NASA language.
-
-说话人 1 33:19 
+说话人 1 33:19
 Yeah, so I think the general question is, well, the narrow question is, you know, does X have an advantage because they have access to tweets? And for example, any of these big platforms, Google has us, YouTube, meta has, you know, Facebook. So there are the old restrictions on what data companies can use, even if they have the data. So it's not that literally the, you know, Google and train on all of its, you know, like your Gmail or something. I don't think that's the case.
-
-说话人 1 33:55 
+说话人 1 33:55
 That said, it is true that companies will have distinct advantages and access to certain types of data that might be, you know, public. So I think public doesn't mean that anyone can train on it. For example, YouTube is, you know, public, but Google has special access to it. So I think the broader question is, well, companies that have access to special data, you know, when essentially, and by default, the answer is yes, because I think that, you know, data is sort of the name of game. Now, interestingly, you know, obviously anthropic has a really good model and they don't have like a particular secret source identifies, I don't know of.
-
-说话人 1 34:42 
+说话人 1 34:42
 So it is not everything. But over time, I think this is my opinion is that I think, you know, you'll see perhaps more differentiation and more, you know, specialization and as companies leverage the resources that they have. Okay, so that's Project Gutenberg. Books 3 was this project that produced a lot of books from this shadow library.
-
-说话人 1 35:11 
+说话人 1 35:11
 It contains books notably from famous authors and since then has been taken down due to copyright infringement. So this was part of the pile. And so just a note about shadow libraries. These are, there's a bunch of different, you know, libraries that basically disregard copyright and bypasses paywalls. This is basically, you know, illegal and they've, there's been lots of takedown orders and lawsuits and so on.
-
-说话人 1 35:42 
+说话人 1 35:42
 But now usually these controls are circumvented because they just put them on, you know, servers in different countries. And, you know, the proponents say that it makes free what's really should be free. But, you know, obviously the law thinks quite differently. In particular, Lipgen has 4 million, you know, books, which is a lot of books compared to Project Gumberg, which has only 75,000 books. And it has been through revealed that meta train models on lip gen, for example, and there's a big, you know, lawsuit about it.
-
-说话人 1 36:20 
+说话人 1 36:20
 So moving on, Stack Exchange is a collection of sites, most prominently, it's stuck overflow, which it started with but has grown to other areas like math and literature. There's some reputation and badges to incentivize participation. All of you probably have used, you know, Stack Overflow, so I don't need it.
-
-说话人 1 36:44 
+说话人 1 36:44
 Well, just for fun, I like always looking at random examples now. Okay, so here's some, this is a page that basically gives you random stack exchange. So I don't know if these are and good, but here's a question and here's some answers. Okay, so I guess this is pretty familiar stuff. So one thing to note is that if you look at these type of this data, it's really kind of like looks like a QA data set, right?
-
-说话人 1 37:25 
+说话人 1 37:25
 So which is kind of what you expect in and for instruction following capabilities and real applications. So I guess, sort of the lesson here is that, you know, by training on your web data or a large in pre training, a lot of it is just documents which don't look anything like what you would a user would type into a chatbot. But there are subsets of the pre training data that look remarkably similar to what users would type, coupled with the response. And this is why, you know, the lines are a little bit blurry between what is pre training and what's, you know, post training. The cool thing about stack exchanges is that there's also metadata like comments and votes, which can be used to filter and the data dumps are, you know, are, you know, provided. Although I think right now this is I if you use it non commercially, it's fine. But if you are a commercial entity, then you have to pay for a license.
-
-说话人 1 38:33 
+说话人 1 38:33
 Okay, so in Github, which everyone and who knows about, and this is a, I think the primary means in which you get code for language model training. So this is help and code is generally helpful for, you know, programming, of course, but it is also then I think, thought to be helpful for reasoning and other capabilities, although I don't know what's, if there's a paper that makes that more rigorous. So here's a random Github. Okay, maybe this doesn't work. Never mind, it used to work.
-
-说话人 1 39:13 
+说话人 1 39:13
 Give you a random Github reposit. And the reason I'm doing this is that I think the Github repos that you visit and the Wikipedia pages you visit are distinctly not a representative sample. And by sampling randomly, it gives you a sense of what's actually in this dataset. So when you look at numbers like, oh gosh, good job has, you know, however many millions of, you know, repositories, not all repository create equal. A random repo might disappoint.
-
-说话人 1 39:46 
+说话人 1 39:46
 Okay, so there's 28 million public repositories. And one thing that's interesting is that, you know, Github, what is a repository is a directory.
-
-说话人 1 39:54 
+说话人 1 39:54
 And some of it's code, not some of it's not code. There's also notions of issues and. Commit history and all this other stuff. And there's also a lot of duplicates. So in order to take Github, which is all this raw, you know, data and make it like trainable tokens. There's actually a lot of work that has to go into think about how you want to best, you know, do that.
-
-说话人 1 40:22 
+说话人 1 40:22
 So Github Archive is this snapshot of all the Github events that have happened and you can access it using Google, you know, big query. So the stack is, you know, a project that fortunately produces open source version of code based on Github. So they took all the repository names from Github archive and Giclone.
-
-说话人 1 40:50 
+说话人 1 40:50
 137 repositories commit kept only permissively licensed ones and remove duplicates. And the result was more 3.1 terabytes of code. So nice thing about code is that often, but not always, the licenses made more clear compared to web pages where the license is almost never made clear. So if you think about this is sort of, you see that there is the live service, there's a website, Github that you go to, you know, every day. And then there's the snapshot, which gives you sort of raw dub.
-
-说话人 1 41:27 
+说话人 1 41:27
 And then there's the processing that happens that turns it into an actual trainable data set. So when someone comes to you and said, I train on Github, then you'll have to ask them, you know, what exactly does that mean? What was the pre processing steps that were taken? Okay, so that was the pile, although I guess I took a little bit of liberty to, and digress into the different components of a pile. So now moving on, so now in 2021, so Deep Mind also came on to the scene, the first large language model they train was gopher on this massive text dataset, which was the goal for model actually was not very good. But the dataset, this the paper does a great job at describing the dataset.
-
-说话人 1 42:21 
+说话人 1 42:21
 So massive text contains massive web, which I'll talk about a little bit later. There's C4UM and then books, news, Github, Wikipedia. There's no details about how those were processed. And as I said, mentioned before, this is obviously doesn't is not reproducible.
-
-说话人 1 42:38 
+说话人 1 42:38
 It's fine you train on Github, but you know how exactly was a data processed. So massive web, you kept English. And here again, like CC net, they use quality filters that were based on manual rules. And they had rules which you'll implement your assignment that look at things like, you know, 80% of the words has to contain at least one alphabetic character. They also use like Google safe search for toxicity filtering.
-
-说话人 1 43:11 
+说话人 1 43:11
 And I think in those days, one of the main arguments for using manual rules is that you didn't want to be biased against the model because models, the only models that they can run is very weak models and weak models don't really understand the page and they're just gonna have, you know, probably pretty awful a bias. And also there is a consideration that this type of filtering can, you know, filter out, kind of marginalize data from marginalized groups that didn't look exactly like, you know, Wikipedia. But as you see later, this sort of has flipped and now everyone's doing model based filtering. Okay, so their data set was ten terabytes of text, which is, I guess, you know, maybe like, let's say 5,4, five trillion tokens, just an estimate, although Gopher was only trained on 300 billion, which is not very many tokens. I think that's the same.
-
-说话人 1 44:12 
+说话人 1 44:12
 There is around the same number of GP three. So in 2022, we have llama. So the data set for llama was common crawl process with CC net. And here, the classifier here, there's a subtlety here. Remember, GPT three was classified whether it looked like Wikipedia oh page or not. Llamo is trained on classifier which predicted do you look like a page that was referenced out of Wikipedia or not. And I guess the idea is that Wikipedia will cite high quality pages and most of those pages might not look like a Wikipedia article, but nonetheless are high quality.
-
-说话人 1 44:55 
+说话人 1 44:55
 So again, the kind of the slink structure which we saw in the GPT two. 2 web text is kind of showing up here. They also included C4. Why not? They use Github did kept permissive licenses filtered based on some manual rules, Wikipedia Project Gutenberg and Books 3, which got them in a lot of trouble.
-
-说话人 1 45:20 
+说话人 1 45:20
 And, you know, archive stack exchange. So they got 1.2 trillion total. So they didn't release the dataset, but you know, together reproduce this dataset and something called red pajama, which now you can go and you have the data processing code and the data which you can take out. So this was a reproduction. So this was clearly not optimal. And Cerebus, it did further deduplication and ended up with a 627 billion primary subset. There's also Rep Chama v 2, which is a little bit confusing because this is something else.
-
-说话人 1 46:03 
+说话人 1 46:03
 This is essentially taking common crawls snapshots and producing 30 trillion tokens with all sorts of different quality signals. So this is a resource for doing research on how to filter based on the quality signals that are computed.
-
-说话人 1 46:21 
+说话人 1 46:21
 Okay, so that was llama and then the refined web was another paper. And here the thesis is, well, remember how we saw the pile? There was web data and there was all this other stuff. And their point was like, well, maybe if we do a good enough job filtering the web data, that's all you need. Because technically, you know, the internet has everything in some sense.
-
-说话人 1 46:45 
+说话人 1 46:45
 If you think about it, if you can access it via a computer and it's a connect on the internet, then maybe that's good enough. And so the refined web, let's see if we can kind of look at some, you know, examples here. The data is a hugging face and it kind of looks like, you know, this, okay, this is okay. The resolution is probably not large enough to, okay, anyway, scrap that. They use trafflitora for extracting content. Because as we noted, trafflitora is better than just using the web files that common crawl provides.
-
-说话人 1 47:30 
+说话人 1 47:30
 They use scope for rules and they made a point of we're gonna avoid ML based filtering to avoid biases. And then they did some fuzzy do duplication. Okay, so they had a 5 trillion token data set, which is, you know, quite large, but there are really 600 billion of it. A fine web from hugging face was started as a replication of refined web, but they try to improve it. So they use all the common crawl dumps, I think at the time did some filtering. Again, this is still using manual rules, no model based filtering.
-
-说话人 1 48:11 
+说话人 1 48:11
 And they did some deduplication and did some, you know, basic anonymization. So they got 15 trillion tokens out of this. So this is still a, I think a really nice data set because it, you know, dealing with common call as I is gonna be a pain. But this is sort of a I would consider fine web as a lightly filtered dataset that you can further do model based filtering on. Okay, so jumping ahead. So AI two put out has a series of models called Omo.
-
-说话人 1 48:51 
+说话人 1 48:51
 Their initial model was trained on the DOMA, you know, dataset. And this is a composition. So we have Common Crawl, we have the stack, which we talked about, which has code C4, which you know, you know, Reddit A2 has a semantic scholar. So I think this is derived from that project, guhenburg and Wikipedia. And you know about, so the reddit comes from this project, which, but they include sort of the submissions and the comments separately.
-
-说话人 1 49:32 
+说话人 1 49:32
 So you don't have the sweat structure. I think this project, I don't know if it's so I guess it's no longer exists anymore. So I think to around 2023, all these sites like Stack Exchange and Reddit realize, wait, people are just taking our data and training models and making money off of it. So I think that sort of came to a stop. So we have 40 million academic papers from semantics. Color, which crawls a bunch of different, you know, sites.
-
-说话人 1 50:03 
+说话人 1 50:03
 And then we have our usual suspects. So the common crawl processing, which is fairly, I think I would say, standard.
-
-说话人 1 50:14 
+说话人 1 50:14
 So they use language identification to keep only the English part quality filtering. Again, they in DOMA, they for training initial model, they avoided model based filtering.
-
-说话人 1 50:28 
+说话人 1 50:28
 And then toxicity filtering, they fury, they use a classifier and then they do, do, do, did deduplication. So 3 trillion tokens came out of that. And then in the same year, so this was last year, so there's a paper Data Comp, which was a collaboration from multiple different organizations here.
-
-说话人 1 50:54 
+说话人 1 50:54
 What they wanted to do is foremost define essentially a competition for creating datasets. And so they wanted to set up basic infrastructure. So they define a standard dataset which you can essentially trial different data processing algorithms.
-
-说话人 1 51:13 
+说话人 1 51:13
 So the process come across all the dumps to produce DCL and pool, which has 240 trillion tokens. So that's a lot of tokens. But as you know, it's a common crawl is not the highest quality by on average. So that's gonna get filtered down quite a bit. They had a particular recipe for filtering down that data set into which is called DCM pool, into DCM baseline.
-
-说话人 1 51:40 
+说话人 1 51:40
 And here they were very aggressive in using of quality filters. So this is what it looks like. They do some rule based filtering, basic stuff. And then they, the main thing that's interesting is that they took this fastest filter that filtered DC Allen pool into this on baseline. So they only kept, I guess, you know, 1.4% of the total data set.
-
-说话人 1 52:09 
+说话人 1 52:09
 Okay, so what do they do for this model based filtering? So again, when quality filtering, you define your positive examples, negative examples in training classifier. So the positive examples come from two sources. There is this open Hermes dataset. So this is mostly GPT four generate instruction data. So this is kind of interesting.
-
-说话人 1 52:29 
+说话人 1 52:29
 They're using actually instruction data to curate pretrain data. So not they're not explicitly in training on instruction data, but they're looking for data that looks like instruction data. Okay. And then Eli five, which is basically the subreddit called Eli 5, ask me like I'm 5. And this is what I guess the data set look like.
-
-说话人 1 52:59 
+说话人 1 52:59
 Okay, what's the point of wasting the first two plays with a rush? Okay. So these are sort of like, you know, questions you might ask to a chat bot. For example. Negative examples are just sampled from refined web, which is, it's not low quality data, but it's, you know, not as curated as these other two sources. Okay, so the result is that they took DCLM baseline, which is 240 trillion tokens, and reduce it to 3.8 trillion tokens, which is, you know, still a good sizable chunk.
-
-说话人 1 53:39 
+说话人 1 53:39
 So then they train a fast sex classifier on these and run it on all of TCL and pool. And here's one of the results tables. So the benchmarks here are core includes a bunch of standard language modeling, you know, benchmarks like Hella, swag and so on. And they show that using this classifier, they actually outperform the refined web by, you know, 3% and a bunch of other things by, you know, 1 or 2%. So this is the mall.
-
-说话人 1 54:17 
+说话人 1 54:17
 This is the procedure they use to create the TCL baseline, which they then you train pretty a reasonable model from there. It is worth noting that after this happened, the second Omo model, if you remember, they started training on, you know, DCLM, you know, baseline as well. So I think this era of we're gonna be unbiased and try to not use models to bias, I think has kind of largely gone away because I think people realize that, well, if you use models in the loop, you can just like do a much better job of getting high quality data and at least for, you know, increasing benchmark scores. Okay, so the final pre training data set I'll talk about is Pneumatron CC. So this came out of Nvidia, which has been doing some work on training the Nematon models, although more recently they've been doing like post training and data curation. So the main thesis is that tclm, great datas, the baseline is great dataset, but it filters very aggressively.
-
-说话人 1 55:30 
+说话人 1 55:30
 Remember, it filtered down all the way from, you know, 240 trillion tokens to 3.8 trillion tokens. And if you want to train on more, you know, you know, train larger models for longer, you need more tokens because this aggressive filtering, 3.8 trillion isn't really enough to sustain, let's say, you know, like a 400 billion model training run. So the first thing they interesting they realize is that they did ablations for HTML detects, but not just based on the quality, but on how many tokens were left. So they're really trying to get not throwaway tokens. And it turned out that just text rather than trafflitura would actually keep more tokens.
-
-说话人 1 56:17 
+说话人 1 56:17
 So they went with just text and then they use a bunch of different techniques to quality filtering. They prompted their gigantic Nematon model to essentially score documents based on educational value, just sold into a faster model and use that to train. So this is a filter based on, you know, what a language model thinks is educational value. And they also use the DCM classifier. There's a sort of a interesting way that they ensemble, they basically ran all these classifiers and look at the bucketed their scores. And then from each bucket, they sampled a bunch of, you know, data set.
-
-说话人 1 56:58 
+说话人 1 56:58
 So it's not just taking the top, because I think they were trying to make sure they have good coverage over different expert's kind of opinion on the notion of quality. They also did this thing which is interesting. They use the language model to not just filter, but also rephrase datasets. So for high quality datasets, sorry, this is backwards. For low quality datasets, they basically use a language model to rewrite it into something that looks higher quality.
-
-说话人 1 57:31 
+说话人 1 57:31
 So obviously there could be mistakes there, but, you know, in the grand scheme of things, maybe, you know, it's no worse than training on low quality internet data. And for high quality data sets, they use the language model to generate task, things that look like tasks. So you take a Wikipedia article, you ask a language model to create essentially input output pairs where the input is might be a question and outputs an answer or the input might be, you know, summarize this document and outputs a summary. Or the input is extract the key information and the outputs key information. So this is again trying to get at the idea of, well, eventually as an instruction at at instruction to anytime we want to be able to, you know, follow instruction.
-
-说话人 1 58:17 
+说话人 1 58:17
 So we might as well start get a head start on this. So they got 6.3 trillion tokens out of that, which is more than 3 trillion tokens, almost double, which is I guess pretty good because I mean, all of this is coming from Common Call, but they were able to essentially double the, maybe not quite double, but almost double the size. You know, for reference, you know, Llama 3 is trained on 15 trillion, Quine 3 is trained on 36 trillion, which includes, I think, multi mode of data. So, you know, 6.3 trillion at this point is not like enormous, but for open, you know, source models with datasets, it's, you know, pretty decent. Like most of us, 6.3 trillion is more than enough for training even to do one epoch. This table shows that basically, on average, they show that their nematon CC data is better than the dclm data, which is has been shown to be better than fine web, at least on benchmarks.
-
-说话人 1 59:22 
+说话人 1 59:22
 And then they actually have this 1 trillion high quality subset that's even better. Okay, so any questions before I move on? I know this was a lot of like random specific details about different models of datasets, but hopefully this gives you a sense of the type of things and hopefully you can kind of see different patterns, whether to use models to filter or not, whether you're using links out of high quality pages or using the pages themselves and so on. So.
-
-说话人 2 01:00:01 
+说话人 2 01:00:01
 Yeah, this is how about like English is since I'm wondering if on calls to include like.
-
-说话人 1 01:00:09 
+说话人 1 01:00:09
 Yeah, good point. So the question is what about multilingual datasets? I've sort of focus on English because that's where primarily all the a lot of the research done is done. But obviously Common Crawl does have multilingual data and there's multilingual datasets that are, you know, produce as well. Okay, maybe interest of time. I'll move on to corporate.
-
-说话人 1 01:00:31 
+说话人 1 01:00:31
 So this was a early question that was asked. How much of the web is copyrighted? So let's just understand what copyright is really about. So nowadays, there's a lot of lawsuits around. Generally, I'm mostly around copyright. So in general, a copyright law falls under kind of intellectual property law. And the goal here is to incentivize the creation of intellectual goods. That's why copyright law even, you know, exists. And there's many types, copyrights, patterns, trained Mark, straight secrets. So copyright law is the one that has been is most relevant for training data. And this goes back to the 1700s in England. But in the US since 1976, there's been the Copyright Act, which has essentially is established of what copyright, you know, means. And this is formerly it's applies to original works of authorship fix an intangible medium expression. And so you know it's original work. So if you are adjust the collection is not copyrightable like telephone directors are not copyrightable unless there's some creativity in their selection arrangement. So copyright also applies to just expression, not idea.
-
-说话人 1 01:01:53 
+说话人 1 01:01:53
 So you can't copyright a, you know, and algorithm. You can copy the, you know, the code. And one thing that has been, what this did is that before, copyright only applied to things that had been, you know, published. And now it's just this looser notion of fix in general. Copyright has sort of increased in scope and, you know, registration are is not required for copyright. So this is different from pans. If you invent something you don't register, then you have no claim to it. Whereas copyright is you put something and you throw it up on your website, it's copyrighted, even if you don't explicitly, you know, write the, you know, copyrighted. But there is a, you know, thing that registration is required before a creator can sue someone for copyright infringement. But, you know, the bar for registration is also over $65 opposed to patents, which are, you know, can be thousands. It now lasts 75 years and then the copyright expires and becomes part of the public domain. So like all the classics and most of people, Project Gutenberg has been gone out of copyright. So, you know, the thing that maybe people might not realize is most things on the internet are actually copyrighted. So whether something copyright isn't really the issue. So the issue is whether you can use it. And there's two ways you can use it. You can either get a license for it or you appeal to the fair use clause. So if you're going to the license route, you can either go sign a contract with the creator and to get a license to use the data in some terms. And this is essentially what does with, you know, for example, Google and Reddit have this, you know, relationship and effective licenses. Don't sue me.
-
-说话人 1 01:03:55 
+说话人 1 01:03:55
 There's a special type of license called a Creative Commons license, which allows the free distribution of copyright work. So creative comments, all that is stuff is still copyrighted, just that you have a license that enables it to act like if it was in the public domain. So a lot of things are like Wikipedia, for example, is all, you know, creative comments license. And a lot of YouTube videos are also creative comments. And this was created almost, I guess, 20 years ago to essentially bridge the gap between public domain and copyright. And the idea is that you want people to be able to use this stuff without waiting 75 years. And there's cases where the creator is actually happy for people to use their, you know, content, but it's just most of the time it's just not clear because they haven't said yes or no. So now many model developers license data for training foundation models, for example, Google and Reddit. Opening and shutter, stock opening and stack exchange and so on. Okay, so if you have money, you go get a license. If you don't, then I guess you have to say your poor academic and then maybe they'll, I'll let you use it. Okay, so if you, but the problem is that you can't get a license to like the internet, right? Like who do you go to a random website? Like who do you even go talk to? So the only way you can use it legally is to appeal to fair use.
-
-说话人 1 01:05:34 
+说话人 1 01:05:34
 So fair use says basically, even if something is copyright and you don't have a license, you can still use it under some conditions. And the conditions determined are determined by the purpose and character of the use. So for example, if you're using for educational rather than a commercial, or you're transforming the work in some way rather than just like copying it and hosting it on your website and pertaining it's your own, that's gonna help you the nature, what the work is. What if it's fictional? That's it's more likely to be, you know, actually if it's, sorry, factual, it's more likely to be fair use. Like for example, the telephone book. You know, you can't really copyright, you know, things that are closer to facts. The whether if you use this just a snippet, then it's more likely to be copyright fair use. Although for language models, that doesn't really apply because you probably want to train on all of it, not just a snippet, and then affect on the market. So for example, if you're using the work to essentially displace the creator, then that's gonna be seen less favorably than if you're using the work to do something completely different. So if you obviously watch a movie and write a summary of it, it's fair use. If you reimplement the idea, that's fine. There's a big long decade fight over whether Google Books, when they show snippets, whether that's fair use or not. And eventually it ruled in favor of Google.
-
-说话人 1 01:07:10 
+说话人 1 01:07:10
 It's also, you know, worth noting that copyright isn't just about vervanum memorization. So it turns out that plots and characters can be copyrightable. So even if you have essentially very little and gram overlap, but you take Harry Potter, the character, and you essentially develop it, then that's that is a violation could be a violation of copyright. But on the other hand, if you parody it might be fair use. So these things are quite, you know, subtle and its copyright is all about the semantics and the emics and the kind of content. So it's a very complicated topic now.
-
-说话人 1 01:07:49 
+说话人 1 01:07:49
 So for what about for training? So one thing is I copyright is, you know, the copy is in the name copyright. So even at the first level training, you copying the data is technically already a violation, even if you don't do anything, you know, with it. You could argue as many have that training ML model is transformative because, you know, it's definitely far from just like, you know, copy and pasting. This does make, I think, open source models with open data allenging because if you want to train a model and you also want to show people your data and you host that data, that could be a violation of copyright. People have also made arguments that, you know, the machine learning system is interested in the idea, not the expression, right? You're training all this data because you're trying to extracts the, you know, how language works and general knowledge rather than interest in a particular work. But of course, the learning algorithm has been, sorry, the models can often memorize and you can extract data, training data from the models quite easily. And there's also this, you know, problem that language models kind of definitely affect the market regardless of copyright. Okay, one, I guess the other thing to note is that even if you have a license and if you can appeal to fair use for a particular work, you still might not be able to legally get the data because of terms of use. For example, YouTube has a lot of creative comments, videos. But if you write a script that goes and downloads you videos from YouTube, that is against the you YouTube's term of service. So there's another gating for these platforms and there's a bunch of, you know, works that you can kind of read about later.
-
-说话人 1 01:09:52 
+说话人 1 01:09:52
 Okay, so let me quickly go on in the interest of time. So this section is gonna be a bit shorter. And I've sort of collapsed mid training and post training together because the boundary is not often quite clear. Often now we're thinking about less high quality in general, but focused on how do you instill particular capabilities. Although, you know, even in pre training, we were already thinking about, you know, quality classifiers and high quality. So again, the line is not quite clear. So one thing that I think is, which we haven't really talked about in this classes long context, so models, if you look at the top models have quite a bit of context. Gemini, I think still has, I believe, I think llama 4 might advertise a ten million context. But you know, context links are quite large and transformers scale quadrastically with the sequence length. I mean, we saw in an inference lecture, you can get around that, but still you need some, I think, full attention to get the best results. And clearly, you don't want to start at the beginning training on long context. So what people do is they add it later. So that's why a long context extension often shows up at mid training because you don't want to waste cycles training on long context if your model is not very good. So there's multiple ways of doing that.
-
-说话人 1 01:11:23 
+说话人 1 01:11:23
 But since this is a data lecture, I'll talk about, you know, books and math are two sources that have been used to do context extension. Basically, for context extension, you just need to create data that has long range dependencies. And some of this data can also be, you know, synthesized. So people also look at tasks. So there's a bunch of works that essentially convert datas, traditional NLP benchmarks into a standard format that they can be fine tuned on. So supernatural Instructions is one such datasets that was leveraged the community to come together and create 1.6 thousand tasks. And they sort of standardize into a, you know, prompt. Flan was around the same year I was, came out in 2022, but it was the paper I was in 2023. So 2,022 was a year of let's take all the NLP tasks and shove them into instruction following, you know, format. And so this, you know, one I think advantage of this is now you have a language model that can solve you all your favorite NLP task and you benefit from transfer learning. This is kind of a lot of, I think about like, you know, you're going back to T5. But one problem with this is that often the prompts that you have are very templatized. If you look at the supernatural instructions, some of it is not supernatural because they're sort of like all look kind of the same. So that sort of motivates, you know, these instruction following datasets. And since 2022, there's been sort of this expectation that language model should just be able to answer any sort of one off task that you give it. So the notion of even task sort of disappears.
-
-说话人 1 01:13:34 
+说话人 1 01:13:34
 So a lot of the work in the open community has been based on synthetic data, starting with, you know, alpaca, which use this idea of self instruct to prompt the language model to generate examples, which you can then use for, you know, fine tuning. There's Vecunia, which used these conversations that had been shared by users on shared GPT, which is deprecated. Now you can get language models to chat with themselves, seated with some questions, and that creates some s, you know, synthetic data. And you can also have these, you know, evolve instruct methods that essentially take questions and make them more complicated. There's other ways of, you know, taking this one takes common crawl and then uses it to essentially look at identify quiz sites and then extracts QA pairs using a language model.
-
-说话人 1 01:14:39 
+说话人 1 01:14:39
 And then this is a open Hermes, which we saw earlier from the tclm work. It's just a glomeration of different datasets. Llama 2 chat, we don't know what the exact dataset is, but they use annotators to essentially write high quality instruction data. And they claim in this paper that this was better than using the millions of examples from open datasets, which, and but they could have even saved more, you know, money by using, you know, by less annotation and more just like rljeff, which we'll talk about later. And finally, the last stage that I'll mention just came out pretty recently.
-
-说话人 1 01:15:33 
+说话人 1 01:15:33
 So the Lama nematron post training data. This consists of a bunch of, there are that many details about this dataset, but the dataset release, so you can go and look at it. They have a public datasets like wild Chat, and then they synthetically generated some data from all the models that are you're able to generate data from. They also include reasoning traces, thanks to R1. And so if you look at this, you know, this style, this status, you can kind of divide into a few buckets, right? One is that a lot of the early work was just, okay, there's GPT four. This is the sort of the easiest way to generate synthetic data. The problem with that is that for academic research is fine, but you know, it is against the terms of OpenAI to use GP four to create a dataset, then you train a competing model. Whereas these open weighed models have more permissive licenses, which mean that you can essentially distill from them and do whatever you want. There might be some restriction on Lama and, but I think broadly speaking, I think they're more permissive and OpenAI. And then finally, if you are really, you know, paranoid, then you can actually just hire annotators to create high quality instruction, which is obviously more expensive and slower. And there's also this, you know, worry that annotators might actually use GPT four to create your data. So you have to be careful that. Okay, so summarize.
-
-说话人 1 01:17:18 
+说话人 1 01:17:18
 So the key lesson is, you know, data just doesn't fall from the sky. You have to really work hard to get it. And it's important to think that out there in the world, there's these live services like Github, right? And first you have to use it. You have to first get a dump of the raw data. But you can't train on the raw data. It's too big or too noisy or it has, it's not even tokens. And you often have to process it. And that's where a lot of the, you know, heuristics that we saw for quality filtering, deduplication kind of fit in.
-
-说话人 1 01:17:58 
+说话人 1 01:17:58
 This was sort of touched on earlier. Data is really the key ingredient that essentially differentiates, you know, language models. I think all of the language model, you know, architectures are some, you know, transformer, Moe style. I think largely the trans, these architectures. So kind of general purpose that the behaviors aren't really gonna be that different. It's really the data that drives the quality there, assuming you can train and fit the data. There are some, you know, legal and ethical issues here. We talk about copyright, but there's more, much more to be said here. And then finally, if you think that this whole field is a mess, you're right. It's very heuristic, which means that there's many opportunities to hopefully improve that. Okay, that is it. And I'll see you on Thursday.
-

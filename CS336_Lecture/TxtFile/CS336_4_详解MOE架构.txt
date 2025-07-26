@@ -1,432 +1,288 @@
 2025年7月14日 下午 10:12|1小时 21分钟 59秒
-
 关键词:
 expert Moe、different experts、moe things、experts model、different moe、different things、same expert、other experts、many experts、Moe model、more experts、routing thing、experts architecture、expert balancing、expert level、expert choice、sized expert、multiple experts
-
 文字记录:
 说话人 1 00:00 
 So we'll get started today. We're gonna cover a mixture of experts. Last year, this was kind of a fun bonus lecture that I threw together. But this year, thanks to, you know, lots of people doing Moes, this has become a much more critical lecture. So I've added a lot of the recent developments. And at the end, we'll try to walk through deep seek V3 and try to understand like what are all the sort of components that make up a state of the open source system or at least on the architecture side, what that looks like. So mixture of experts is how a lot of, you know, the most modern high performance systems today are built and deployed. So there was the funny Nvidia leak of GPT four actually being potentially revealed as GPT moe 1 BT. But more, you know, broadly others like Grok and Deep Seek and llama 4 now have all adopted a mixture of experts architecture. And it seems like at this point in 2025, that the advantage of mixtures of experts over dense architectures is very much clear, right? Almost all compute scales, training a mixture of experts model, if you do it well, is gonna give you benefits over a dense model. And so everyone seems to be doing it in both the east and the west. And so this will be an important thing to understand if you're trying to build sort of the best model that you can for the flops that you have. So mixture of experts is very simple. It's a very terribly named concept. I think you hear a mixture of experts and you think, oh, there must be experts specialized for different domains. And they're like doing different things like there's like coding expert and like an English expert and other languages expert. It is very far from that mental model, a mixture of experts is a type of fancy architecture that has several sub components called experts that are activated sparsely. And in particular, when you think about mixture of experts, you should be thinking about the MLPs. This is where all the action is, right? So Moe architecture and a non Moe architecture are going to be similar in almost all of its components except for one. And that is, you know, if you look at this slide over here, you know, this is the components of a standard transformer. You got yourself attention, you got your FF fan. If you zoom in, you know, in a dense model, the feed 4 component just sort of, you know, is there, it's one big block.
-
-说话人 1 02:30 
+说话人 1 02:30
 In a sparse model, what you would do is that you would take this FFN and you would split it up or you would copy it depending on how you're going to be setting up your Moe. You're gonna have multiple copies, let's say, of your FFN, your fully connected networks, and you're gonna have a router that picks some smaller number of those, you know, in each forward pass, right, each inference, right? So this is the basic idea behind the Moe. And we're gonna replace this one, big feet forward on the left side with a selector layer in many smaller ones. And what's the advantage of this thing? Well, if it's sparsely activated, that is, let's say, only picks one expert, and an expert is the same size as your dense FFN.
-
-说话人 1 03:07 
+说话人 1 03:07
 Then the flops between the left side and the right side, the dense model and the Moe model, they have the same flops, right? They're doing the same matrix multiplies as you do your forward pass. So you have more parameters without affecting your flops. And if you're a believer that what matters is having more parameters to, for example, memorize facts about the world, well, you know, this is a great architecture, so you can kind of see the intuition behind Moes. Hopefully that's all very clear. And you might wonder, okay, so it makes sense that you can get, you know, more parameters per flops, but does that translate to actually better performance for the models that you're training? And there's been, I think, at this point, many papers showing that at the same flop count, at the same training amount of flops, you get better performance out of a mixture of experts than out of a dense model.
-
-说话人 1 03:59 
+说话人 1 03:59
 So this is a nice paper. So today I'm gonna go over a couple of the classic Google papers that, you know, put to this field together. And this is one of them by FedEx at all 2022, where they show that, you know, if you flops match your, you know, training flops, so that's the same amount of compute used for training. And as you increase the number of experts, the training loss of your language model just keeps going down and down, right? So you know more experts better. Of course, the experts aren't free. You need to store the memory for these experts. And when you do parallelism, you're gonna have to think about, you know, routing your data into 256 separate experts so that there's gonna be systems complexities. But if you're only thinking about flops, this is a great chart to see because you have the same flops, but you've gotten free, you know, test loss here and you see the same thing reflected on the right side. You know, as you train for longer and longer, the model, the switch base with 128 experts, right, the model with more efforts, you know, gets better perplexity faster, right? So hope.
-
-说话人 1 05:00 
+说话人 1 05:00
 Hopefully, that is quite clear. You might say, well, this is a 2022 paper. Is this true sort of on modern architectures, on modern scales? It, you know, continues to very much be true. AI two had a very nice paper, Olmo, which did a whole bunch of ablation and carefully controlled comparisons into dense versus Moe and other architectures. And they sort of see exactly the same thing. So here on the left side, this is still from FedEx at all. You see the 7X speed up from having many experts on the right side.
-
-说话人 1 05:30 
+说话人 1 05:30
 This is the Omo comparison. You see the pink one is the Moe and the TL one is dense. And the training loss for the dense model goes down much more slowly than the Moe, right? So hopefully, you know, I have in some sense sold you on the value of Moes and for learning this kind of new, slightly new architecture, right? So we're gonna pay up a price for all of this, but at least at the flops level, this looks very compelling. So yes, question.
-
-说话人 2 05:57 
+说话人 2 05:57
 Last section you mentioned like, yeah, I should lose the livestreaming part because although it's a pretty for sanitation is affects our actual inform process pretty badly. We're, you know, loading in and out see serious is there right. So.
-
-说话人 1 06:17 
+说话人 1 06:17
 The question was in last lecture, you know, I was saying even small non flops, you know, negligible flops can be really big in wall clock. Is anything in the Moe world going to look like that? And so I think one of the drawbacks of Moe is why, you know, that's not the standard thing that's being taught. You know, let's say at 2,24 n is because there's significant systems complexities to making this thing efficient. So I'll, you know, get to that. It's possible to make these things very efficient, especially if each expert lives on a separate device so that, you know, you're routing thing data to different places. You can be very efficient when you do that, but it's not easy, right? So there's a lot of infrastructural concerns and you're gonna see a lot of complexities to get this thing to work. But when it does work, you know, you're putting all of your flops to use. Okay.
-
-说话人 1 07:05 
+说话人 1 07:05
 And then the last one that I wanted to show is, you know, a lot of the companies really love Moes because you get to present plots that look very compelling like this, right?
-
-说话人 1 07:14 
+说话人 1 07:14
 This was from the Deep Seek v 2 paper, you know, on the x axis, there's a little bit of sleight of hand. This is only activated parameters, right? So this is only the parameters that are used, you know, for computation. So you ignore all the deactivated experts. And the y axis is MLU performance, right? And we see deep CV two. Wow, look, very few activated parameters, really good mmlu performance, right? And so if you're only interested in both training and inference flops, you know, activated parameters is the name of the game. You get really good performance here. And this is, you know, not just an ablation. This is a real system that someone, you know, spent a lot of money to train and deployed out in the wild. Right. And we'll see this sort of pattern recur in other examples as well. Those are question. All right. And so the system's thing that is also a benefit is that Moes allow us to have another access of parallelism.
-
-说话人 1 08:08 
+说话人 1 08:08
 So I'm gonna get into parallelism in much more detail, sort of in the systems lecture. So I'm gonna talk about how you're gonna take your model and you're gonna cut it up into many small pieces and lay them out across many different devices. But I'm gonna talk at a very high level. But when you have experts, there's a very natural way to paralyze at the expert level, right? So you have multiple different feed forward blocks. You can take each of these experts and you can put them on a different device, right? And because experts are sparsely activated, all you have to do is take your token and route it to the appropriate device, and the computation will happen on that device, right? So it's a natural sort of cutting point to be able to shard your model into different devices. And so this is called expert parallelism.
-
-说话人 1 08:50 
+说话人 1 08:50
 And this is another reason why Moes are very popular, right? If you really want to paralyze really big models, this is a thing that you're gonna have to do. And kind of interestingly enough, I think Moes, you know, developed at Google and many of the frontier labs, the closed labs were doing it. But I think the open results actually came from China very frequently. Quan and Deep Seek were doing, you know, a lot of Moe work last year. And it's only really recently that I think western open source groups have started to do more moe work. So mix, stroll, grok, I guess Grock's not open.
-
-说话人 1 09:27 
+说话人 1 09:27
 And then now llama is now an Moe architecture, right? And so here, you know, Llama 4 just got released, right? Latest and greatest. This is also a sparse Moe. And I'll talk about Llama 4 as well as I go through the lecture, as I said before. So, you know, one of the kind of starting points for this is some of the Chinese groups, Kwan and Deep Seek, have actually done some really nice work benchmarking and understanding and evaluating some of these Moe results. So these Moes, so when one point. 25 was one of the first models that I knew of to have like this large scale, well tested, well documented Moe. And what they did was they took a Quin 1.5 dance model and they had a nice trick to upcycle it into a mixture of experts. That's a clever kind of trick to take a dense model and then turn it into an Moe. And they showed sort of significant gains, at least in terms of compute efficiency, while sort of decreasing the total number of parameters relative to their sort of 7 b model Deep Sea, which is now famous, but originally when these papers were coming out, were not quite as famous. Did some of the, I think, really foundational Moe work in the open source world. A big part of this lecture is actually gonna be tracing the trajectory of the mo deep Seek Moe architecture. But if you look at their original deep Seek Moe paper, you'll see very nice papers, sorry, very nice sort of comparison showing things like what happens when you train a dense model with a particular amount of slots, what happens when you train a really naive Moe that doesn't do very smart routing? What happens? And then if you use a smarter routing called the switch sort of Moe, what happens? And so you'll see all of these very carefully controlled comparisons. And you see as you go from dense to sparse, right, so that's the leftmost column. So the rightmost column, you see all of these sort of benchmark metrics very consistently improve for a fixed amount of flops, right? So this is very consistent and kind of one thing that I think almost everyone at this point has probably heard of, right, is Deep Seek v three. And that's in some sense, you know, a combination of all of this line of work. But if you hadn't following Moes and you were excited about kind of this branch of neural networks and language modeling. You would have actually known about, you know, Deep Sink long before V3 got popular. And we'll see at the very end of this lecture, actually, Deep Seek V3 is not very different from the very earliest deep seek Moes architecture. Naturally, you know, they had kind of nailed it way back when they were training these sort of much smaller 2 billion parameter models. They really just kind of got the engineering right to get something that is actually really quite remarkably good, which is their V3 model.
-
-说话人 1 12:13 
+说话人 1 12:13
 Okay, so now I think, you know, I have spent quite a few minutes trying to really hype you up on Moes and they really are, I think, worth hyping up. They're very good. But I think there's a question of why haven't they been more popular, right? Why isn't it the standard thing we teach in, you know, NLP and language modeling classes. It's just that they're very complex and they're very messy. And I'm hoping that they'll get simplified over the next few years, but they still remain pretty nasty. So one of the things is, you know, the infrastructure is very complex and the biggest advantages of Moes really happen when you're doing multi note training, like when you have to split up your models anyway, then it starts to make sense to Shard experts across different models. That's a very natural thing to do. But until you get to that point, maybe MOS are not quite as good, right? So some of the earlier Google papers really talk about this tradeoff where they say actually when you get these really big models that you have to split up, then experts become uniquely good.
-
-说话人 1 13:12 
+说话人 1 13:12
 There's also other things that are really tricky if you think about it carefully, right? This decision of which expert you route tokens to is a very difficult thing to learn, right? In deep learning, we really like differentiable objectives, right? Very smooth things that we can take. Gradients of routing decisions are not differentiable cuz we have to pick and commit to a particular expert. So if we're doing that, you know, we're gonna have a very tricky optimization problem. And the training objectives to make that work is either heuristic and or unstable, right? And so we're gonna have to really carefully engineer those guys to get them to work, right? So those are two reasons why you don't really want to maybe do this normally. So what do Moes look like?
-
-说话人 1 13:55 
+说话人 1 13:55
 As I started this lecture with, you know, the classic Moes that you should think of as you take, you know, the densely connected layers, the FFMs, and you split them up or you, you know, copy them and you have sparse routing decisions among them. Of course, you could do the same kind of idea. You could have a sparsely routed attention layer. And some people have done this. There's been a couple papers and a couple releases that have taken this approach, but it is actually quite rare to see this in the major model releases. I think I've seen people talking on the internet saying like this approach is actually really much even more unstable and very difficult to really train consistently. It's sort of, I haven't really seen the ablations to back that out, but certainly there haven't really been many people training those kinds of models with Moe attentions.
-
-说话人 1 14:44 
+说话人 1 14:44
 So now, you know, I've told you about the basic architecture, right? It's really simple. It's just you have a router of some kind and you route and then you have different MLPs. So what are the things that might vary across different moe choices? You might. Ask how do we route, right? The routing function is an obviously important choice. How many experts and how big should the experts be? That's another choice. And then the final one is how would we train this router, right? This non differentiable objective that seems very difficult to train. So those are very important design questions and we're gonna go through each one, hopefully covering the design space of all these moe things. Okay, any questions before I get into each one of these different subcomponents?
-
-说话人 1 15:28 
+说话人 1 15:28
 Okay, so if you're interested in just kind of understanding a broad overview of Moes, at least circa 2022. There's a really nice sort of survey or a review paper by FedEx at all in 2022 that covers a lot of these and many of my figures, you know, are credited to that paper.
-
-说话人 1 15:50 
+说话人 1 15:50
 If we're thinking about how we're going to route or essentially match tokens to experts, right? This is the core component of Moe. Because what Moe does is, you know, tokens are going to be coming in, right? You have your sequence that you're processing and those sequences are going to be assigned to experts, right? Not all experts will process every token. That's the whole point of a sparsely routed Moe. And so you can ask, how are these routing decisions made? So you can sort of have three different kinds of choices. You can have token choice where each token is going to have a sort of routing, sort of preference for different experts. And I will choose the top k experts for each token. Or I can have expert choice where each expert is gonna sort of have a rank preference over tokens. And then I'm going to choose the top K tokens for each expert. This has a really nice benefit of being balanced over experts.
-
-说话人 1 16:41 
+说话人 1 16:41
 And then the last one is sort of you could solve some sort of complicated optimization problem to make sure that the mapping between experts and tokens is somehow balance, right? This is global assignment. And just to, you know, give you a bit of a teaser here, almost all the Moes do token choice top.
-
-说话人 1 17:01 
+说话人 1 17:01
 Okay, in the early days of Moes, people tried many different things, sort of spanning this whole spectrum of design space of token routers. If you look at the big releases, they have all converged to basically one class of routing mechanisms, which is token choice top K. So each token is gonna rank order experts by affinity. And then there's going to be kind of a top k choice for each one of this.
-
-说话人 1 17:25 
+说话人 1 17:25
 And Olmo, which I'll keep referring to throughout this lecture, cuz they have a really nice series of ablations. So it's really nice to peach off of, have exactly this ablation. They compare a token choice routing versus an expert choice routing. And they show if you look at validation loss, token choice is much nicer, behaved much faster in loss decay. Yes.
-
-说话人 2 17:46 
+说话人 2 17:46
 Oh, functional function of the token itself for its.
-
-说话人 1 17:49 
+说话人 1 17:49
 Position. It's a function of the sort of the hidden state, right? So the token is gonna get processed with all the position embeddings and so on. And then the hidden state will come in and then it will be processed by the MLP.
-
-说话人 2 18:00 
+说话人 2 18:00
 Right? And so for the other two, like for the experts choosing the token and also it can respond when you say it's like more balanced across the experts. Are you, bay? Like it's still for the current like token sequence, but it's like it's forcing them to be more distributed, I guess. Like it's.
-
-说话人 1 18:21 
+说话人 1 18:21
 Still gonna be the same set of tokens, but really it's about kind of a ranking selector function, right? In token choice, I'm just gonna take the top K amongst the columns, like maybe the scores are even identical, right? I'm just going to take the top K amongst the columns in Expert Choice. I'm going to take top K amongst the rows, right? And top K amongst the columns is kind of nice because you might be able to say, oh, I can define a scoring function such that the score is how well each token gets processed by each expert and token choices rule route me to the best expert, right, for that token. So that makes sense from processing. But expert choice has the benefit that each expert gets exactly the same number of tokens. And so now you might, like if you're putting different experts on different devices, you've got balanced utilization. So there's different tradeoffs at play as you think about routing. Yes.
-
-说话人 2 19:07 
+说话人 2 19:07
 How does a tool and know which expert.
-
-说话人 1 19:09 
+说话人 1 19:09
 Is the best for good? Yeah, so the question was, how does each token know which expert is good? That is exactly the role of the router. And I'll give you the router equation. But to give you a bit of a, not really a spoiler, but you know the routers are much more lightweight than you think. So, you know, your token, let's say, is represented by vector X that you're like hidden, you know, residual stream coming in. So now X is gonna get multiplied by, you know, w, a matrix, and then you'll just take, you know, a sigmoid or something and that's the score. So it's really just a vector in our product, almost like an attention operation in a way.
-
-说话人 1 19:43 
+说话人 1 19:43
 Yes, she's talk how many, right? So the choice of, so the question was, is k 1 here? So k is actually a hyper parameter and different mods will choose different things. I will talk about this again, but to give you the high level intuition, the in.
-
-说话人 1 20:00 
+说话人 1 20:00
 Initial argument that the earliest Moe papers made was that k should be greater than 2 because that way you get some exploration, right? If you're doing k equals 1, maybe you're just always exploiting the best arm and you'll never know about the potential. Other things you could do. But if K is 2, then maybe that second arm can tell you a little bit of exploration information. So, you know, cables 2 was the canonical choice and cables 2 actually continues to be very popular. That's right. So that would double the flops.
-
-说话人 1 20:29 
+说话人 1 20:29
 And so when people talk about Moes, they usually say things like x number of activated parameters. And that would account for the fact that you're, you know, putting into MLPs.
-
-说话人 2 20:39 
+说话人 2 20:39
 Yes. So when Kay's creator has gone, like even I for time, do we like buy the outputs of the different experts into.
-
-说话人 1 20:48 
+说话人 1 20:48
 Yes, the question was when keys 1 did the outputs get combined? That's right. Like if you look at, I guess, like look at the attention diagram over there, you know, you got the router, it's routed to two MLPs up top, and then they get combined together right after, right? So that's exactly right.
-
-说话人 2 21:04 
+说话人 2 21:04
 So in that case, it is just like a simple average by the way, in average.
-
-说话人 1 21:08 
+说话人 1 21:08
 So the question was, how does the app aggregation happen? It's just like some, right? So I'm gonna go over the variance, very common variance that people do. And really, in some ways, all you need to know is top K in order to actually implement a high performance Moe. But I'll give you the other variants because they're natural things you might think of. Top k routing is what is used in most Moes, token choice.
-
-说话人 1 21:34 
+说话人 1 21:34
 Top routing, top k routing. So how that works is, you know, you have your residual stream inputs x that will go into a router. And as I said, a router is really kind of like the attention operation. There's like a linear inner product and then a Softmax. And then you pick the top K most highly activated experts and then those outputs are gated depending on the implementation, you might wait the outputs based on this router way or you might not. And then you will just output the weighted average or just a straight sum depending on how your Moe implementation works.
-
-说话人 1 22:06 
+说话人 1 22:06
 And so a lot of the Moe papers and methods use top case, which transformer, G Shard, rock mixture plan, all the deep seek variants use different pop K variants. Maybe a very surprising fact.
-
-说话人 1 22:24 
+说话人 1 22:24
 And this should really make you think about what's going on with Moes. There are a lot of results that show that actually you don't even need a smart router at all. You can actually just use a hashing function at the very bottom to map these exes onto your experts. And even if you're doing hashing, so no semantic information at all, you will still get gains from a hashing based Moe, which is pretty wild.
-
-说话人 1 22:48 
+说话人 1 22:48
 Some of the earliest work on Moes, I think had the very smart idea and in many ways the right idea if you're thinking about this top down of using RL to learn the routing behavior, right? Of course, you know, the choice of where to route to is a discrete decision and RL is great for learning discrete decisions.
-
-说话人 1 23:06 
+说话人 1 23:06
 Why don't you use RL to learn routing? It was using some of the earliest work on mixture of experts as far as I know, basically no one does this now. The compute cost to do this is too prohibitive and you already have stability issues, you might not want to do that. There have been a couple of papers that have explored things like solving linear assignment problems or optimal transport style problems. They're very elegant, but once again, the cost of doing this is much higher than the benefits that it gives you. I think in practice, this, and it hasn't really been adopted, but there's a lot of really interesting things that people are doing like this to try to improve the routing.
-
-说话人 1 23:44 
+说话人 1 23:44
 So now I can, you know, point at this slide and really talk through how routing works in detail. So this is the kind of top K routing that almost everyone has converged to now. This is the router that's used in Deep Seek v 1 to 2, Quan and Grok do almost exactly this. There's a, instead of having a Softmax directly at the bottom here, they do a deep CV, three mixed roll DBRX don't have a Softmax at the bottom, but they'll Softmax the G of its. But that's a very minor difference. So let's walk through what's going on here and try to reason about, you know, the behavior of this.
-
-说话人 1 24:25 
+说话人 1 24:25
 So what's happening here is at the very bottom, we've got our inputs. This is our UF l input. And I would like to take this sort of residual stream input and process it through, you know, my Moe. So the first thing I'm going to do is I have to figure out which experts are going to be activated. Now, how am I going to do that? Well, how I'm going to do that is very similar to attention. I'm going to take my U, which is my residual stream input, and I'm going to take the inner products with the e of is. These are kind of Learned actors that are for each expert that. Tells the expert, I'm an expert, you know, that points in this direction, right? And so I'm computing in this inner product here, expert and input affinity, and I'm computing a Softmax to determine for each, you know, token, what are, you know, the best experts, right? So I normalize this is sift.
-
-说话人 1 25:16 
+说话人 1 25:16
 Now I take the s of I of t and I go through a top k function. I only select the k best weights. And then I use this as my gate. So I zero out everything else and I take the weighted average of each of the expert's outputs, and then I add that to my original residual stream, and then I return that, right? So this is hopefully very familiar to kind of what you're all very familiar with in terms of how, you know, transformer works with only the difference of this top K routing piece. Is that clear kind of to everyone how this thing works? Excellent. So in some sense, the mechanics of the forward process of the routing is very simple. What is kind of mystifying is that fact that you can learn this very well, right? This is in some sense a fairly complicated set of things to have to learn to do well by a model. Yes.
-
-说话人 2 26:14 
+说话人 2 26:14
 So we're using Softmax here. Previously, one of the benefits of softness, decide it's gonna push you pretty strongly to choosing a singular max. It's not a hard max, but explicit tool. I'm having something in the iteration of playing Softmax, basically on top of like combining of the top K where you're getting multiple and then you're using something that's gonna push me towards choosing.
-
-说话人 1 26:42 
+说话人 1 26:42
 Just one thing. Yeah, I mean, I think maybe one way of thinking about the Softmax is, you know, it, the whole purpose of this is just to make it so that when I average my experts later, it kind of sums to one. Don't think of the Softmax as like a Softmax operation, even though that's literally the name. Really, the Softmax operation is a normalized to 1 operation and the normalized to 1 operation is gonna make that a weighted average up top.
-
-说话人 1 27:10 
+说话人 1 27:10
 The other thing that's very important is, you know, you might think, why can't I just get rid of the top K? Why don't I just use the soft match here and just, you know, gate all the experts? Well, then you immediately lose the system's efficiency aspect of this, right? You have to have top K during training. Otherwise you pay the training cost of all capital n of your experts, right?
-
-说话人 1 27:30 
+说话人 1 27:30
 This is the key thing about Moes. Like we have to do all of this gymnastics to make sure that both at training time and inference time, we have a sparse number of activated experts. That's why we go through the top. Okay. Okay. Yes, from the back.
-
-说话人 2 27:44 
+说话人 2 27:44
 So the country is doing Softmax first and then the south, they get the race. You no longer have to guarantee, for example.
-
-说话人 1 27:54 
+说话人 1 27:54
 So the question was, yeah, so the question was, if you Softmax first, you no longer sum to 1. And yes, that's absolutely right. You no longer sum to one. And in some ways, like there's no requirement that you have to sump to one cuz, you know, the next layer can magnify it back up. You know, there's layer norms everywhere. It's not as if it has to sump to one, but I think that is the reason why some of the other architectures basically move the location of the soft net. There's a kind of aesthetic choice about whether you really want that, you know, weight to be normalized to 1 or not.
-
-说话人 2 28:22 
+说话人 2 28:22
 Yes. So I was wondering like, how does the E vector here relates to the weight increases of the t forward network?
-
-说话人 1 28:30 
+说话人 1 28:30
 Okay, so the question was whether the whether and how the E vectors relate to the feed forward. They're not really tied in any way. The E vectors are just Learned vectors for that. You just think of the ease as parameters for the router, right? There's separate objects from. Oh yeah, great.
-
-说话人 1 28:51 
+说话人 1 28:51
 The question was about how does it compare to sampling from the Softmax? You can sample from the Softmax and some methods actually do kind of soft sampling from the Softmax. Specifically, one of the Google papers has a procedure where they take the top element of the Softmax and then they randomly sample the second element proportional to the remainder of the Softmax. And that gives you more exploration, which is good. But the drawback of that is that if you don't sample at test time, now you've got a train test mismatch. Okay. Yes. Can I just renormalize after popk? Why not just renormalize after Poppy was the question. Is that right? And some models do that. Some models do bring them like that's in the topic, but that's a kind of a choice. Like some architectures don't do that, some architectures do. It doesn't actually matter because the scale can be basically adjusted post hawk, right? So there's no reason why it has to sump to 1 after the G operation.
-
-说话人 2 29:49 
+说话人 2 29:49
 Cool. Outside. Yes. So bias, you don't know term is you right up there. Yeah. So first turn into song. If G is approximating probability vector could be seen as an expectation of the function at the time, right?
-
-说话人 1 30:10 
+说话人 1 30:10
 Plus view. So FFN, actually, this is not an expectation of FFN because each FFN is a different FFN. So this is not actually an expectation. And the gates are sparse. So this is like a weighted selection operation over k different or actually capital n different ffms. Okay, and then the UTL at the very end there, you know, if you remember the transformer, that's the residual stream, right? So I'm adding back the inputs because I want sort of a identity connection through it.
-
-说话人 2 30:38 
+说话人 2 30:38
 Okay. Oh, there's not. Why is the router have such a basic parameterization? Like what happened if you put more weights into, oh, your router.
-
-说话人 1 30:49 
+说话人 1 30:49
 Great. The question was, why is the router so basic? It seems like if you're gonna have experts, it seems important to route to the right experts. So why don't you do that?
-
-说话人 1 30:57 
+说话人 1 30:57
 I think, you know, there have been some relations in some of the earlier Google papers on having like MLP routers and like more sophisticated things. I think the sort of complex answer here is that the system's concerns sort of weigh heavily. If you're using a lot of flops to make routing decisions, you know, you have to pay for those flops. And so you have to get performance improvements in just the routing.
-
-说话人 1 31:20 
+说话人 1 31:20
 You know, and I think the one other thing to appreciate here is that there are really big limits to how well you can route because the learning process for this routing thing is actually pretty dicey, right? Because how are you gonna get gradients for which routers are good or bad? Well, the only thing you have is if you have top two, then you can compare the two things that you have. And you can push the gradients into SFT because your G is a weight and then the SFT might inform your inner product. But that's a very indirect way to be learning your affinity. So even if you make it complex, there's no guarantee that you're gonna really learn the optimal router, right? Okay.
-
-说话人 1 31:57 
+说话人 1 31:57
 So I think the one of the great innovations of the deep seek moe and which was very quickly adopted by all the other sort of Chinese Moe releases is this idea of both a shared expert and a fine grained expert, right? And so the basic Moe structure that was sort of originally proposed is to take your dense architecture and kind of copy the experts over, right? So in this case, you know, you're gonna have, let's say if you have two, if you have top two routing, you know, you're gonna have twice the activated parameters of your original dense model, right? So you take your Moe and you copy it over and you activate k equals to.
-
-说话人 1 32:38 
+说话人 1 32:38
 So this is kind of what you might think of as like the vanilla or like the basic Moe that you might start with. People realized fairly quickly that having lots of experts is good. And the logical sort of next step beyond having lots of experts is good is I want lots of experts, but I don't want to pay the parameter cost for having lots of experts.
-
-说话人 1 32:58 
+说话人 1 32:58
 And so deep seek basically argued that the right thing to do then was to cut the expert up into smaller pieces, right? So remember last lecture I was, you know, telling you about, oh, the kind of golden rule in some senses to have, you know, your hidden layer and then you multiply that by 4 and that will give you kind of your projection layer, right? So now what you would do is you would, instead of multiplying by, let's say four, you might multiply by two, right? So now you have smaller matrices, you have more fine grained experts, you can have twice as many of them, right? And you can kind of take that logic much more to the extreme. You can like, you know, quadruple or multiply by 8 and you can keep decreasing the size of your sort of projection dimension there. That's fine grained experts.
-
-说话人 1 33:36 
+说话人 1 33:36
 And there's, you know, drawbacks I'll talk about later. It's not, it doesn't come for free. So you have to be very careful about how you structure these things. And then the other thing that, you know, has been sort of studied and noted is maybe it's helpful to have at least some MLP that can capture shared structure, right? Like maybe there's just like processing that always needs to happen no matter which token you're processing. In that case, it seems like kind of a waste to do all this routing work and to have all these like, you know, parameters spread out everywhere. When we can just have one shared or one or a few shared experts, you know, whose job it is to handle all of this like shared processing that's needed. And so there's shared experts.
-
-说话人 1 34:16 
+说话人 1 34:16
 And so this set up of using fine grained experts plus shared experts originally came out in Deep Seek Moe, although I think the original inspiration came from deep speed Moe and quen and others. So almost all of the open Moe releases since Deep Seek have adopted some sets of these innovations because it's quite clear that especially fine grained experts is just really useful. That's a kind of no brainer at this point to do.
-
-说话人 1 34:50 
+说话人 1 34:50
 One of the things I really like about reading deep seek papers is that they do ablations. You know, it's not like a whatever sales tech report, you know, they actually care. About whether or not their methods work, and so they have this lovely ablation in the deep seek Moe paper where they show, you know, the blue bar over here, this is G Shard. This is a very basic vanilla implementation of Moe. You know, you can have one shared expert, that's the orange bar. And that gives you a big boost on some tasks and no boost on others. You can have fine grained experts, that's the green and orange, you know, bars, and you get further boosts from that. And if you compare the blue to the orange, you know, composing all of these differences give you a quite the big boost over others. And so we can see that, you know, more experts and shared experts generally seem to help. Okay. Yes.
-
-说话人 2 35:39 
+说话人 2 35:39
 Question off like when it says 7 out of something, does that mean it's doing like top 7?
-
-说话人 1 35:45 
+说话人 1 35:45
 Yes, sorry, I I should have explained. That's right. So X out of y means X activated out of why total routed experts. Okay. And so you can kind of see the pattern here as well of as you increase the number of experts, you also often increase the number of activated experts, especially if you're doing fine grained experts, it flops wise, it's free, right? Because you know, each expert is now smaller. So Olmo has, you know, basically corroborating evidence that shows really nicely that these things work. So the bottom one, I think I'll start with cuz it's more decisive, shows, you know, fine grained experts going from 8 to 32 to 64 fine grained experts mirroring in some sense the deep seek ablations and you see very clear trends and losses and other kinds of metrics that you see improvements going from 8 to 32 to 64, right? Fine grain expert is great.
-
-说话人 1 36:41 
+说话人 1 36:41
 Shared experts, which is purple versus teal at the very top, you actually don't see really any gains, at least in the Olmo setup. So they actually end up going with no shared experts, even though the deep seek paper seem to show more gain. So that one actually is maybe more mixed, given this sort of follow up for this, you know, third party replication of these kinds of ideas.
-
-说话人 1 37:04 
+说话人 1 37:04
 So at this point, you might be wondering, you know, what are our common configurations? I think I'm gonna, you know, take the page out of, you know, last lectures playbook of looking at a lot of the recent releases, you know, looking at what people do and trying to talk a little bit about the patterns that have arisen.
-
-说话人 1 37:21 
+说话人 1 37:21
 So some of the early Google paper, so G shard, switch, transformer, stmoe, some of them had really large numbers of routed experts. And there was a lot of like really interesting stuff going on in those papers. I'd encourage you to read them. Some of them happened in LSTMs and other kinds of architectures.
-
-说话人 1 37:40 
+说话人 1 37:40
 Regardless, you know, very quickly, I think there was like kind of a period of like eight to 16 experts like mixed roll, DBRX, rock with two active experts. Those worked reasonably well.
-
-说话人 1 37:51 
+说话人 1 37:51
 But then kind of deep seek Moe or deep seek, you know, Moe v 1 comes out that has kind of the prototypical configuration I told you about. Fine grained experts, 64 of them, six actively routed, two shared experts, and each sort of expert is sort of one fourth the size of a normally sized expert. Take that last column with a grain of salt, because I had to sort of back them out from like config files and things like that. So I'm not 100% sure about the exact ratios here.
-
-说话人 1 38:18 
+说话人 1 38:18
 So we've then got essentially Kun 1.5 Deep Seek, V3, minimax. These are, you know, Chinese Moes. They follow essentially in the same footsteps as deep seek v 1. The specific numbers are different, but in the sense that they use, you know, fine grained experts and they often have shared experts. They're very similar to kind of this original deep seek Moe configuration. Omo, Mimax and llama are very recent Moes. They definitely do all this like fine grained expert stuff. And Llama 4 also uses a shared expert and you kind of see sort of variations and configuration, but you see what's basically shared, which is this fine grained experts idea. And especially for the big models like llama 4 and deep Seek, very large numbers of routed experts, or sorry, not routed, like.
-
-说话人 2 39:05 
+说话人 2 39:05
 Total experts. Yes.
-
-说话人 1 39:10 
+说话人 1 39:10
 So the ratio is representing roughly like how much each export is sliced relative to having just the standard dense configuration. So in terms of hyper parameters, you know that if you're following the rule of thumb, your hidden dimension and sort of your projection from inner MLP should be about 1 to 4 or 1 to 2.6 if you're doing a gated network, right? And so by looking at the hidden layers of these architectures, you can kind of see how many times they slice up that original feed forward size. So this.
-
-说话人 2 39:44 
+说话人 2 39:44
 More of those experts, does that mean that still increasing market flow parameters by like.
-
-说话人 1 39:49 
+说话人 1 39:49
 The factor of. That's right. So, you know, you can think of this as roughly, you know, they have, you know, 16 normally sized experts. Oh, and so they, you know, they're of course having more parameters than the density. Equivalent, they have six routed, so they have 8 total active experts at any time, each that are quarter size. And so you should think of them as like roughly double the flux, right, of a dense equivalent, some arithmetic, but hopefully the math is clear and consistent. Hopefully, yes.
-
-说话人 2 40:17 
+说话人 2 40:17
 Only the regions like one are you like again, like.
-
-说话人 1 40:23 
+说话人 1 40:23
 Sally. So for some of the exotic ratios, I'm not quite sure why they're that way, but they are very precisely whole numbers when you take the ratios between the FFMs and the implied hyperparameters. And so I think those are exactly the split counts of like how much they were sliced, but I'm not sure why they have one over 14. Like, like, does it do you ever.
-
-说话人 2 40:44 
+说话人 2 40:44
 Like project this like smaller dimension? Because like.
-
-说话人 1 40:50 
+说话人 1 40:50
 So yeah, so yeah, that's why you're asking like, do they down project? Yeah, that's right. And some of them, they're actually small. I don't remember which models in particular, but in some of them, I do remember there are.
-
-说话人 2 41:01 
+说话人 2 41:01
 Yes, but it's an intuition for one thing more than one shared expert.
-
-说话人 1 41:06 
+说话人 1 41:06
 Yeah, I mean, I, I, it does kind of seem like there was a period where some other Chinese LM companies tried many shared experts and then, you know, people have come back to 0 or 1. And if you look at the all mobilations, it's not quite clear that even one shared expert is decisively useful. I think the original motivation was that then you have equally sized, you know, experts like these are both 1/4 sized experts. And now you have eight active experts total. And so you can keep the sizes consistent. Otherwise, I don't really see a particular justification for why it should be 2 smaller one versus 1.
-
-说话人 2 41:40 
+说话人 2 41:40
 Larger one.
-
-说话人 1 41:44 
+说话人 1 41:44
 Cool. So then hopefully, you know, you get a sense of how the routing works for a lot of these Moes and how it's all set up. The forward pass, hopefully you fully understand. Now we need to think about training and training is pretty gnarly, right? And the major challenge I foreshadowed earlier, right? When we train, we cannot turn on all the experts because if we do that, then we pay the full flops cost of all of the experts, right? Having a model that's like, I don't know, 256 times more expensive to train is a total no go, right? So we need train time scarcity, but sparse gaining decisions are obviously not differentiable.
-
-说话人 1 42:23 
+说话人 1 42:23
 We now have a kind of annoying RL ish problem. And so we could do any of these things like RL to optimize gating policies. We could do, you know, Bandit inspired things of doing randomization to do exploration or, you know, we can just have some heuristics that try to balance things out, right? Like put some loss terms in there and hope things work out. You know, having gone through deep learning classes of many kinds, you can kind of guess internally which one people use in practice. And I'll talk about each one of these three in turn. Okay, so RL I think is one of the earliest things that people tried.
-
-说话人 1 43:00 
+说话人 1 43:00
 It's probably the most principal thing that you can do in this space, right? You have a, you know, non differentiable routing decision. Well, think of that as a policy through our RL at it and then solve the problem. Unfortunately, it's not better than a lot of the other things that you can do. There is a paper by Clark at on 2020, who were exploring various like scaling related questions in Moes. And they do have an RL baseline that, you know, I was able to dig up, but unfortunately, it's not really that much better then, say, using hashing for decisions. And they were, you know, they were really interested in benchmarking this thing on the left called s base, which is like a linear assignment kind of a method and that thing, you know, handily beats, you know, doing RL. And I think in practice, the gradient variances and complexity means that it's pretty finicky to use. And no one, you know, at scale has really used an RL based approach to optimize these gating decisions. As far as I know, a thing that has been done much more at scale is stochastic approximations of various kinds. So what they might do is they might add a bit of, you know, perturbations.
-
-说话人 1 44:16 
+说话人 1 44:16
 So here is an example of one from Shazir in 2017. This is one of the early moe papers where they're still gonna do kind of top K routing. So they're gonna keep the top K elements of this H of x operation, and they're gonna soft match that to get the gate. But what we're going to do to get this, you know, H of X operation is kind of the following. So what we're going to do is we're gonna have our original sort of linear, you know, affinity. This is identical to what we were doing before. We were basically just computing, you know, our inputs x and, you know, a sort of Learned weight for each gate. And so this part is the same, but I'm actually now gonna jitter it a little bit. I'm gonna add a normal, and then I'm gonna pick sort of a W nor. Noise scale, that's Learned, and this thing is going to control how much noise to inject into this process. And you can kind of think of this as a stochastic exploration policy. And by manipulating w noise in particular ways, like sort of unkneeling it down or doing various things, I can control the exploration exploitation tradeoffs that this Moe is gonna have, right? And so this is gonna give you one solution to the explore exploit dilemma. And especially if you're noising things up, each expert might randomly get, you know, some other tokens that it wasn't expecting to get. So it'll lead to experts that are less specialized, but maybe a little bit more robust. And so that seems generally quite nice. Of course, the stochasticity also means that you don't get as much specialization and that leads to loss of efficiency. And you know, there's another approach that people have done where they sort of multiply the router logits. We're sorry, they, yeah, have a multiplicative perturbation to the router logits with the goal of getting less brittle experts.
-
-说话人 1 46:05 
+说话人 1 46:05
 But this sort of jitter process was kind of removed in some of the later papers because they found it just didn't work as well as some of the heuristic loss based approaches. And so this was an approach that was tried in a couple, this kind of stochastic routing tricks where we're tried in a couple of the early Google papers. But I think that has generally been abandoned by a lot of the people training these Moes.
-
-说话人 1 46:29 
+说话人 1 46:29
 Okay, so yes, stochastic. Like what problem does that solve? Cuz we're still taking the cockpit, so we still can't refer to that. Well, if you think of this, so the question was we still can't differentiate because we're taking the top K. But if you kind of change the, your interpretation of the problem a little bit, if you think about a bandit problem, right, it has the same structure as this where, you know, you pull a bandit arm and you don't see any of the other arms. So you can't, you know, really allocate your resource is efficiently if you pull some of the other ones at random, now you've got enough data to be able to do some optimization. And so this jittering is very similar to, in spirit to this kind of like epsilon greedy style exploration thing where you're randomly pulling some of the other arms with some probability, where the probability itself depends on how confident you are about this routing decision. So that's kind of the intuition. And then, of course, you know, that's going to give you some way of getting some signal back.
-
-说话人 1 47:26 
+说话人 1 47:26
 Okay, so the thing that in practice people have ended up with is, you know, we don't do any of that. We don't do, you know, RL. We don't do stochastic exploration, but we rely on really another mechanism to sort of keep things reasonable. So if we're doing top two routing, right, technically speaking, we do get some signal in the gradient descent process because we can compare the top two, you know, experts that we did evaluate. And so it's possible to do, you know, some optimization, but when we do, you know, ignore, if we drop all of the other constraints, the big issue that arises is you just end up sort of picking one expert all the time and that expert is good at everything and all the other experts are terrible, right? You end up in this local minimum where you've routed all of your tokens to one experts all the time. So really the key gain becomes then how do we get out of that local minimum and loss balancing or like balancing losses is really the key trick to get out of this.
-
-说话人 1 48:25 
+说话人 1 48:25
 And this is kind of important to understand because this is the loss that mostly everyone actually uses to train the Moes, right? So if you were zoning out earlier, you know, you probably should make sure to pay attention to this particular set of equations here.
-
-说话人 1 48:40 
+说话人 1 48:40
 So this is originally from the switch transformer from FedEx at all in 2022. I mean, they add this particular loss where what they're going to do is they're gonna, you know, loop all over each of the experts and they're gonna take, you know, the, you could think of this as an inner product between the vector F and the vector P. And so what are these vectors? Well, F is for each of the experts. This is the fraction of the tokens that were allocated to expert I. So you can think of this as kind of a probability vector that's telling me, you know, what fraction of my tokens in my batch or in my, you know, whatever the unit is here, did I route to expert? I? Now p of I is the fraction of the router probability that was allocated to expert I. So the router probability is kind of the original sort of soft maxed routing decision that I was sort of intending to send, right? So this is kind of measuring POI is what was sort of the intended probability from the router. And then F of I was the actual sort of like, you know, what was the actual routing decision made by the top K method.
-
-说话人 1 49:49 
+说话人 1 49:49
 And one thing that's kind of interesting to look at here is, let's say we take the derivative of that loss with respect to p of I. So you know this is a linear function. With respect to POI, and you'll see that the strongest downweighting action happens on the sort of biggest experts with the biggest allocations, right? So the, it's actually in fact proportional to the amount of tokens that you get. So you're going to be pushed downwards sort of more strongly if you've got more tokens. And so this is kind of the basic behavior of this loss. And, you know, almost everybody uses this kind of f dot p kind of a trick to try to balance tokens across different units. So the basic unit that you might want to balance over initially is batches. You might want each batch to get allocated evenly to experts, but you might actually have other kinds of balancing that you might want to do.
-
-说话人 1 50:44 
+说话人 1 50:44
 And Deep Seek does exactly this kind of thing. I'll talk about all the variants that they've thrown in. But you know, the first thing is per expert balancing per batch. So each batch, they want to make sure experts get a even number of tokens. And you know, this is from the deep seed paper.
-
-说话人 1 50:58 
+说话人 1 50:58
 And hopefully this looks, you know, very familiar to you. This is exactly the same, you know, f dot p in our product structure as you saw before, you know, POI is defined a little bit differently. That's Sivi of P, you know, but that should be familiar from earlier as well. That's the Softmax Pre Top K, right? So hopefully this looks all pretty good to you. And the other thing you might want though is, you know, you might want to balance across experts. That's all well and good, but you might also want to think about the system's concern, right? Because you're going to shard your experts onto different devices and you might want to balance per device, right? And so you might have another loss that's essentially the same structure, but instead of summing, you know, which tokens go to which experts, you might measure which tokens go to which devices, right? And that's gonna be a different F that's measured over the device groups rather than over each expert.
-
-说话人 1 51:48 
+说话人 1 51:48
 And so now you can set up a different loss to balance over devices. You optimize this, you're naturally gonna try to learn routing functions that make sure each GPU or each TPU will have, you have an even number of tokens leading to even utilization, right? And that would be great from a systems perspective. So basically everyone does, you know, kind of this kind of a thing. And so deep CV three actually kind of innovates a little bit. This is kind of cool. And I don't think I've seen this before. It's one of the first things in the Moe world that doesn't actually come from Google, really, which is that they have gotten rid of this per expert balancing term. They've gotten rid of this entirely. And instead what they now do is they basically take their Softmax scores and they add a little fudge factor B of I, where B of I is a little fudge factor score for each expert, right? So expert I, you know, might get upweighted or downweighted. So if an expert isn't getting enough tokens, you know, it's gonna be given a higher Boi, and then that's gonna allow it to grab more tokens. And the way that this works is that they're going to learn Boi through a really simple online gradient scheme, online learning. And so they're gonna measure at each batch, you know, what are each of the experts getting? Like, are they getting an even number of tokens? And if they're not getting enough tokens, they add sort of gamma, some learning rate to B of I, sort of making it higher. If they're getting too many tokens, they're gonna subtract gamma, making that expert slightly less attractive, right? So they're just learning little, you know, offsets for each of the s of is. And notice here, you know, you're only using the B of eyes to make the routing decisions. You're not actually sending it over as part of your gating weights, right? That's a sort of somewhat important thing to do. So they call this auxiliary loss free balancing. If you go and read the Deep Seek Vaper, which all of you should, because it's a really nice paper, they'll make a big deal about how this makes training so stable, so great, so wonderful. And then of course, you like keep reading the section and they're like, actually, but we decided that, you know, for each sequence, maybe we still wanna be balanced and this doesn't work well enough. So we've added the, the, you know, the heuristic loss back. So they do have something called the complementary sequence wise auxiliary loss. That, you know, is basically exactly the auxiliary loss that they decided they needed because what they wanted to do was to balance load, balance the experts at a per sequence level rather than a per batch level. I'm not sure why they do this particular thing rather than any other sort of, you know, B of I style trick. But that's just kind of what they do in Deep Seek v 3. So it's not fully auxiliary loss free as they'd like you to believe. Oh, yes, question.
-
-说话人 2 54:37 
+说话人 2 54:37
 This is a bit of an unfair question, but if we did not have to worry about systems optimizations, do you think the performance of this file would be a lot better or would it stay roughly the same.
-
-说话人 1 54:48 
+说话人 1 54:48
 If we did not think about systems optimization, would the performance of this model be better or stay the same? When you say this model, what do you mean? Deep CV three or.
-
-说话人 2 54:56 
+说话人 2 54:56
 Like Eastern General, like these modern numbers.
-
-说话人 1 54:59 
+说话人 1 54:59
 So are you saying like. If we ignore the system's concerns, do we think Moes are still good? Is that kind of one way of asking that question?
-
-说话人 2 55:08 
+说话人 2 55:08
 Like with the performance of downstream fast, for example, be better than what we have right now.
-
-说话人 1 55:13 
+说话人 1 55:13
 Yeah, so I think.
-
-说话人 2 55:17 
+说话人 2 55:17
 I must set a roughly equal number of floating strawberry expert.
-
-说话人 1 55:21 
+说话人 1 55:21
 Or yeah, yeah, that's right. Well, I think actually per expert balancing this term, right? This is not a system's concern. So you still want to do this because if you don't do this, what you'll find, and actually there's, you know, I'm going to keep referring to the old mode paper because they have to have so many ablations. They have a really nice ablation where they get rid of exactly this. And what they find is basically early on in training, the model just picks like one or two experts and all the other experts are dead. Like the router never sends anything to them.
-
-说话人 1 55:50 
+说话人 1 55:50
 So you're just wasting memory at that, right? So now you've just lost performance for free. You've effectively gotten a smaller model. And so even if you ignore all the other like device balancing parallelism concerns, you've just gotten that worse model because you didn't properly allocate your experts, right?
-
-说话人 1 56:05 
+说话人 1 56:05
 It's the same way as like you want to use all your parameters, right? You would like to effectively use your parameters. You wanna do expert to balancing. Sorry, say, what does device refer to? Yeah, actually, so normally this would refer to like GPU or TPU. There is a subtlety I'll talk about this maybe in the very last or second to last slide. There are more sophisticated and cool versions of this where you try to balance things to minimize communication costs as well. And so there's, you know, broader notions of device like, you know, one rack or whatever else. But here it usually refers like GPU.
-
-说话人 2 56:39 
+说话人 2 56:39
 Yes. But going back to the fact that like hashing as a routing other than 16 improve performance, like is there intuition? Because that's effectively just like random choosing a like one of the few former members to send it through, right? So like why this having multiple copies of that? I guess each of which get less data, why does that make.
-
-说话人 1 57:04 
+说话人 1 57:04
 Performance better? Yes, the question was why does hashing do anything at all? I don't have the, you know, really precise intuition for this, but you can make arguments either two ways. One is, you know, even if you're hashing, the same tokens are gonna go to the same, you know, or the same kinds of, you know, sequences are gonna go to the same expert every time, right? And so each expert will still get some deterministic subset of the inputs. And so there's some specialization that can still occur. It's just non semantic or, you know, non Learned. And if you're a distribution zip fian, like the word thus might dominate one expert, you know, and so you might still get actually semantic specialization where like one expert is effectively dominated by like very frequent thing.
-
-说话人 2 57:43 
+说话人 2 57:43
 But like a random routing of.
-
-说话人 1 57:46 
+说话人 1 57:46
 Chicago, like a pure random thing that's not dependent on input. Yeah, I would bet that would be really terrible. Yes. I have never run or seen that, but yes, I think that would be horrible.
-
-说话人 2 57:57 
+说话人 2 57:57
 Yes. So for like morning LM, like you have many labels, right? Many transformers. And I think you met earlier in the lecture, you mentioned that issue expert. So like if you kind of see like that came back like 32 layers and like 64 packs first, that's like a volume GPUs or I wonder if like a couple experts are bundled together on like a single GPU. So we need purpose.
-
-说话人 1 58:20 
+说话人 1 58:20
 Yeah, so the question was like, won't you need lots of GPUs if you have lots of layers and lots of experts? Yeah, if you exclusively give a GPU to a single expert, yes, that would be kind of crazy. But you would send a shard thing so that each GP would hold, you know, enough of these units to, you know, effectively use memory, right? Like the name of the game in parallelism is you always wanna use up all of your memory cuz that's one of your resources, right? You don't wanna paralyze more than you have to.
-
-说话人 1 58:47 
+说话人 1 58:47
 Next one. Oh, okay. I did put the escalation in here. Yeah, so this is exactly what happens to the question of what happens if you don't do, you know, expert balancing loss. I think the great picture to see is this bottom left one. If you don't do load balancing, you know what are the tokens assigned to which expert. You see the pink and the yellow expert, they just like kind of take over. They take up, you know, about 50% of the tokens. All the other experts are dead. They do nothing, right? And so you've wasted, you know, the majority of your experts at this point, you know, six out of eight of your experts. And you've created a two expert Moe unintentionally and you know that gives you know worse losses. Up seen up on the top right, the TL lines, of course, maybe that's still better than the dense model. Cuz at least you've got two experts going, but you could have done better, right?
-
-说话人 1 59:35 
+说话人 1 59:35
 Counterfactually speaking. Okay, so I won't go quite as deep as I could into the system side because I haven't really started to cover, you know, the core system's concepts necessary for you to deeply appreciate a lot of the parallelism concerns, like, you know, basically the hierarchy of communication speeds in a data center and so on. But really, as I said before, you know, one thing to keep. Keep in mind is just how nicely Moes can fit into devices. You, you know, the thing that people say is expert parallel, you know, that involves sending or putting one or a few, you know, experts onto each device. And what happens when you, you know, are basically processing a token? Well, you would hit the router and after the router, you now have picked few experts. And so now you would have a collective communication call, like all to all communication dispatch that would send the tokens to the relevant devices, you know, the feed forwards of compute, you know, their outputs, and then you would return the tokens to sort of where they belong, or you would, you know, combine, I guess, multiple experts. And so you would need another sort of collective communication call. And so if your feed forward computations are sort of big and beefy enough, you can kind of pay for the cost of basically doing this expert parallelism. And one of the thing that's nice about this is that it's another form of parallelism in your toolkit. So you've got on the right side, you know, you know, data parallelism, model parallelism of, you know, two or three different kinds. And then you've got expert parallelism and you can combine all of them to come up with sort of ways of trading off all the resources you have. So like communication speed, the amount of data that you have, your batch size, and your number of experts and your memory. So I'm not going to go into too much detail about how specifically this is going to help, but keep in mind that this gives you another sort of tool in your expert toolkit.
-
-说话人 1 01:01:32 
+说话人 1 01:01:32
 Another thing that is also, you know, useful is let's say you have multiple experts on a single device, you know, you might hope that because the computations are sparse, like let's say, you know, token 1, this first token, you know, gets multiplied to expert 0. The second one is expert 1, and the third one is expert 2. So this is really three matrix multiplies that are small and sparse. And you might hope that modern GPUs can sort of take advantage of these kinds of, you know, complex, these kinds of sparse matrix multiplications. And that's exactly right. So if you, you know, lay out your sort of experts correctly and the weights are sort of fused in the right way, then modern sort of sparse matrix multiply sort of engines and sort of effectively make sure that you're not wasting any flops in doing this one big matrix multiply. So modern libraries like meta Megablocks can basically take advantage of this, you know, device level sort of scarcity support to do multiple expert computations sort of all at once. So this is yet another advantage that you get with mods.
-
-说话人 1 01:02:39 
+说话人 1 01:02:39
 So one fun side thing, which maybe isn't mysterious to you anymore because you've sort of grown up in the era of GPT four. But when the GPD4 API first came out, it was kind of mysterious to me because when you set the temperature to zero, you know, you kind of got different responses, even though it was supposed to be deterministic. And lots of people speculated about why would that be. I'm not saying this is the answer to that reason, but there is actually an interesting source of randomness in Moes, right? So in Moes, think about, you know what, and you're going to route your tokens to experts, right? And experts live in different devices. It could be that, you know, you have a lot of examples, you're gonna batch, of course, batch your queries when you're processing them. And so if you've batched your queries, these tokens are gonna get routed into different experts. So imagine you've got, you know, this batch to process and you've got a bunch of experts, but for whatever reason, this batch really loves expert No. 3. Like all the tokens go to expert No. 3. So now what happens? Well, the device for expert No. 3 doesn't have enough memory to load all of those tokens. And then what happens is what people call token dropping. And this happens at training time as well. You often have what's called a load factor where you're sort of controlling the maximum number of allowed tokens. And if the router just allocates too many tokens to an expert, you just drop those tokens off, either for systems reasons or because you're just worried that expert is gonna take over, at least in the training time. And so now this token has gone dropped and it's not gonna get anything at all. Like the MLP is just gonna do a zero computation and the residual connection is just gonna pass things straightforward. And then you're gonna return an output. And so if your token got dropped, you're gonna get a different result than if your token didn't get dropped.
-
-说话人 1 01:04:26 
+说话人 1 01:04:26
 And so based on, you know, who else is in your batch, Moes can induce stochasticity, both at training time in inference time, which is like kind of an interesting thing that you don't normally think about because you almost never think about like cross batch effects when doing inference.
-
-说话人 1 01:04:42 
+说话人 1 01:04:42
 Okay, so that's kind of the main bits of, you know, the main basic components of building the Moe. In a fun side thing, if you were to actually go out tomorrow and try to train an Moe, I think the system side will make you a little bit sad. But the other thing that would make you sad is probably the stability. Side of things, so Moes kind of have this property that sometimes they'll just kind of blow up on you. If you try to fine tune them, they're very difficult to find you and they'll sometimes blow up on you. And so, you know, bear it.
-
-说话人 1 01:05:14 
+说话人 1 01:05:14
 Zach and others really study. They had a whole paper on basically trying to make Moes more stable. And there's a paper, which is the one I'm referencing here, whose entire purpose is to stabilize Moe training. And there's two, a couple of tricks that I'll mention that I think are relevant and that people do. The first one is, you know, if you're doing the router soft Mac, so this goes back to last lecture about stability, right? Like what did I say about stability? Well, the thing to be afraid of is the soft maxes, right? The soft maxes is always where you want to be afraid. And so for the Moes, they do all the computations in float 32 for the router computations, just to be safe, right? And sometimes they also add the, you know, an auxiliary Z loss. So hopefully you remember that it was just last lecture, you know, you do log of the sum of the exponentiated no values in the Softmax and you square that and you add that as an extra loss, right? So this is going to keep the normalizer values near 1, which is nice for stability.
-
-说话人 1 01:06:14 
+说话人 1 01:06:14
 So this is actually one of the places where Z loss was used earlier before I got sort of more popular for training models. You can kind of see the effects here if you look at the losses, I think the the center, the second plot here is maybe a great one. You know, if you remove the z loss from your router routing function, you see these like giant loss spikes in your validation loss where, you know, the model just kind of goes a little bit crazy for a couple iterations and then gets kind of pulled back. Of course, it like still trains okay, but you are better off having the Z loss than not having a Z loss. There is a pretty noticeable gap in the validation loss by the end here, right?
-
-说话人 1 01:06:54 
+说话人 1 01:06:54
 Other things that can happen, people, you know, of course, you want to fine tune your moe. You'd like to also rlhf your moe if you're gonna, you know, ship and release it.
-
-说话人 1 01:07:03 
+说话人 1 01:07:03
 But this turns out to be kind of problematic. Some of the earlier work, you know, when people were starting to do Moes, this was back in kind of the Burt and P5 era. So there was a lot of fine tuning going on. And, you know, one of the things that people saw was, you know, actually there's a lot of overfitting that happens if you were kind of doing sparse models, you see this big gap between train and Val, right? This blue and orange line. Whereas the dense model, this green and red line has a smaller train test gap. And so there was a lot of worries about overfitting because you have these like gigantic parameter models that you're fine tuning on small data.
-
-说话人 1 01:07:39 
+说话人 1 01:07:39
 One of the solutions that was proposed at the time, I don't think this is very popular, as far as I understand, is to architect your moes such that not every layer is a Moe layer, but you like, let's say alternate dense layers and Moe layers, then you can just fine tune the dense layers and then that will still be fine, right? That behaves just like a dense model. So that was fine.
-
-说话人 1 01:08:00 
+说话人 1 01:08:00
 Another solution, the one that we saw in the Deep Seek Moe paper, is just kind of use a lot of data. Like if overfitting is a problem, you know, we have access to lots and lots of SFT data. Just shovel all of those guys in. So in the case of Deep seek moe, they use 1.4 million training examples, then maybe you're not quite as worried about these overfitting concerns. The last thing I'll end with, which is a trick in the toolkit that I, that people have done and seen is upcycling. And so this idea is to take a dense model like the one over here, and then you take your MLP and you make a bunch of copies of it and then you maybe perturb it. And then you have your router that's initialized from scratch and then you just pretend this is an Moe and then you train it from that point on, right? You just initialize the Moe from a dense model. And this is a trick that's kind of called upcycling. And you know, people have shown that if you can get it to work, it is a very cost effective way of getting an Moe, right? And the Moe is great for inference because not every MLP is gonna be active or at inference time, right? So you're gonna, you might effectively get a much larger parameter model without doing the training of a much larger parameter model. And several people have succeeded at this mini CPM, which I'll mention again in the Scaling Wall lecture. But this is a Chinese open LLM that basically tried to build really good small language models. And they succeeded at taking a dense model and upcycling it into a Moe, and that you can see that their numbers get significantly better in the last two rows, right? So the dense models, the Moe, they get a pretty non trivial bump in performance.
-
-说话人 1 01:09:42 
+说话人 1 01:09:42
 Quan, I mentioned at the start of this lecture, one of their earliest attempts at Moe was taking one of their dense models and then building up cycled Moe and they got, you know, fairly significant performance gains relative to sort of smaller models at the time. Like they got models on par with their. 7 b models with a 2.7 billion parameter active model.
-
-说话人 1 01:10:07 
+说话人 1 01:10:07
 So to wrap up, I want to sort of walk through the deep seek moe architecture at the very end here. And hopefully this will give you a sense of, you know, the first thing I want to do is I want you to understand the Deep Seek V3 architecture setup and all the changes that they did because that's an example of a modern high performance open source system. I also want you to maybe appreciate that architectures don't change that much.
-
-说话人 1 01:10:32 
+说话人 1 01:10:32
 Deep seek v 1 or, you know, deep seek Moe v 1 is a, you know, it's not that new. It's like maybe a year and a half or something, maybe two years old. And they basically nailed the architecture at that point, right? So I want to see, I want you to see what they changed from that very earliest attempt to their big training run.
-
-说话人 1 01:10:52 
+说话人 1 01:10:52
 So this is the very first starting point. This is deep seek Moe. I'm calling it v 1, but actually, you know, probably the right way to refer to it is deep Moe. It's a 16 billion parameter model with 2.8 of those parameters active.
-
-说话人 1 01:11:05 
+说话人 1 01:11:05
 And you've seen already this diagram over here. This is the share, two shared plus 64 fine grained experts, of which four of them are active at a time. Maybe six of them are active at the time. Sorry. And the routing, you know, you've already seen this.
-
-说话人 1 01:11:22 
+说话人 1 01:11:22
 I presented this in the middle of the lecture here. This is a very standard top k routing where the Softmax is at the bottom before the top case selection. And for balancing at training time, all they do is to add this auxiliary loss balancing term, right? Both the expert and device level balancing terms, right? So hopefully, you know, you remember those from earlier. So that's the V1. And then they saw how sort of effective their Moe model was. So I guess to add some more context, right, Deep Seek originally had a dense model, and then they had an Moe model. And the Moe model was remarkably good. And so when they went to V2, they went straight to the Moe.
-
-说话人 1 01:12:01 
+说话人 1 01:12:01
 And now this is a 236 billion parameter model, of which 21 of those billion parameters are active, right? So you need a lot of memory, but your flops consumption for inferencing this model is not so bad.
-
-说话人 1 01:12:13 
+说话人 1 01:12:13
 Now the architecture is identical. I copy literally the same figure because the architecture is literally the same minus changes to the number of, you know, experts that are active. And we've got now sort of some new things happening, but not too many new things. So the top case selector is the same.
-
-说话人 1 01:12:34 
+说话人 1 01:12:34
 So the equation from before, this previous equation, this is identical. This is still how they do things. But they have this very clever trick that they add on. And this is, you know, I was going to say at the very beginning, you know, what's the drawback of having fine grained experts? Why can't I have, I don't know, 1024 fine grained experts or 2046 fine grained experts? Well, the problem is when you shard your experts very finely and you have a lot of active experts, right? You're gonna have to route to those experts, right? So your communication costs potentially grow. And if you're very fragmented, you might have to send a lot of tokens to a lot of devices, right? And so the clever thing they come up with is to say, I'm not just gonna, you know, at for each batch route to the top key experts naively, which might force me to send my tokens to lots of devices. What I'm going to do is I'm going to first pick top m devices, right? So I'm going to do my, you know, normal scoring calculation, but I'm first gonna sort of subset the set of allowed devices to top m, right? And once I've picked my devices, then I'm gonna pick top K for each token within each device, right? So now I've restricted the devices. This really controls the communication cost. And now this gives you more efficient training when you're scaling up to these gigantic sizes, right? You need to start really engaging with the system's aspect of things when you're training a 236 billion parameter model.
-
-说话人 1 01:13:52 
+说话人 1 01:13:52
 The other thing which reflects the system's concerns that are necessary at the scale is that they add a communication balancing loss. One way of thinking about things is, you know, for an expert, there's kind of inputs and outputs, right? The inputs are, you know, the token comes in and you route your expert. And the outputs are, you know, you have to kind of bring the tokens back where they belong, right? So if a batch belongs on this device, it has to go backward the original device was. So we have to think about both the input communication cost and the output communication cost. And so they add a balancing Wasp to try to balance out the output communication cost as well, not just the sort of input side. So that's a minor note, but you can kind of see their attention to detail on trying to make sure all of the different sort of systems aspects are properly taken care of.
-
-说话人 1 01:14:36 
+说话人 1 01:14:36
 Now finally, we kind of get to the, you know, the big deep seek v 3, sorry, that should say v 3, not v 2 up there, 671 billion parameters of which 37 are active. You know, once again, you know, exactly the same figure because the Moe architecture itself doesn't change. That's stayed the same since deep seek Moe, right? Like if it works, don't change it. They do change a couple things. Maybe there were, you know. Hearing you all say, why don't you normalize to 1? And so you know they've normalized the gate to 1. They've moved kind of the Softmax normalizer operation up there. But they're not actually exponentiating sort of the sort of gating decisions they're actually taking sigmoids, which is a sort of softer, sort of more nicely behaved operation, you know, than the Softmax. And so they've got some changes here, but conceptually, this is still the same as the top K routing decision, right? You hopefully see very similar things happening.
-
-说话人 1 01:15:28 
+说话人 1 01:15:28
 And then in terms of the losses, they've gone to this auxiliary loss free trick of this B of I being incremented or decremented based on the expert load. And then they have a sequence wise auxiliary loss. And just to, you know, add some context, why would you want to balance different experts on a single sequence? Well, the thing that they're very concerned about is at training time, you know, it's fine to not have a sequence wise balancing loss, but at inference time, it might be the case that someone sends you very out of distribution sequences and that might overwhelm certain experts, right? So at interest time, you can't control which sequences you get. So you might want sort of stronger balancing that operates at a single sequence level rather than an overall batch level. Okay.
-
-说话人 1 01:16:14 
+说话人 1 01:16:14
 And then in the, oh, sorry, yes, to speak the top end devices 26, yeah, they keep the top m improvement. They do not keep, for example, the communication loss. So they've jettisoned some things. But top m is a, I mean, it seems like a pretty clever idea. They keep it. Yeah, but it's not like they always add things. They have removed some of the things. And so in the last two or so minutes of the class, I'm gonna go over the non moe parts of Deep Seek v three. Because I think, you know, we're already at the point where I've explained most of Deep Seek V3. I might as well go through the steps of explaining the rest of Deep Seek V 3 at this point. So you all know kind of how that works. So they have a clever sort of optimization for the attention piece called MLA or multi head latent attention. And you all actually already know all the ingredients that you need to understand this.
-
-说话人 1 01:17:12 
+说话人 1 01:17:12
 Because at the end of last lecture, you know, I talked about like GQA and MHA, right? So those are all inference optimizations that you need in order to optimize the size of the KV cap. So the deep seek folks take a different path or a different approach at optimizing this instead of reducing the number of heads, they're actually gonna sort of project the heads into a lower dimensional space. So you have your inputs H of t. And instead of sort of generating the Kas and VS directly from these H of keys, what I'm going to do is I'm going to first generate a low dimensional C. You can think of this as like a, you know, compressed version of H. And this C is going to be smaller and easier to catch. And I'm just going to catch these CS and whenever I need, you know, these ksmbs, well, I can sort of up project from this KV, sort of conceptually speaking. And then, you know, I can take the inner products with the cues, right? So you can kind of see how this would be a KV cash savings if I only have to save the C instead of the higher dimensional H of t. And that's exactly the idea. So you take your H of t, you project it into a lower dimensional C, and then you up project this back into the KS and VS, right? And if the CS are small, well, you've compressed the KV cache, that's good.
-
-说话人 1 01:18:23 
+说话人 1 01:18:23
 And then, you know, in terms of the computation, right, if you're thinking about flops, well, you might think, well, this is not good because I have to multiply an extra matrix, w, UK, right? I didn't have this matrix before. That's an extra matrix multiply that I have to pay for. But kind of the clever thing here is remember that on the other side of K, right, I'm going to take k dot Q, right? If there, that Q dot k is gonna be an inner product in the attention operation, right? And Q itself has a projection matrix Q. And so the trick here is you can merge this wuk and this Q matrix together into one matrix. So I haven't gotten any extra matrix multiplied. I've just merge this new matrix multiply into my other one, right? This is, you know, just associativity. I can just merge the two. They also compress the queries for memory savings during training. But really that one is not quite as necessary because it doesn't interact at all with the KB cap. I'm only going to mention this last one in passing because it is a subtlety, but it's kind of a clever subtlety that you realize, which is that this original trick, this sort of thing that I just described at the top, is not compatible with rope, right? And the reason is because, you know, the rope matrices, you know, basically you have the cues into the case and you rotate each of those cues in the case by multiplying with the rotation matrix RQ and RK. But if you do that, then these RQS and RKS are in between the query projection and this up latent vector, up projection matrix. And since I can't reorder these matrix multiplies, you know, rope kind of gets in the way. And they still have a solution of basically doing rope on non.
-
-说话人 1 01:20:00 
+说话人 1 01:20:00
 Compressive mentions, that's kind of a side point. I think it's not quite as important. You can kind of look at the paper if you're super interested. The other thing that they do, and this is the last thing I promise, is that they have a minor change in their loss function called MTP, where they predict multiple tokens in parallel. And so what they can do is normally, right, you have your inputs, you shift them to the left by one. So you're predicting one token in the future, and then your transformer is gonna predict all those tokens, right? That's your normal transformer wass. But then what you can do is right before you make those predictions, you can take, you know, the hidden state, you can pass it to a very lightweight one layer transformer and that model can predict, you know, one token in the future, right? So now the model is not just predicting in the next token, it's predicting the two tokens into the future, right? So that hopefully all makes sense. And this is just a small lightweight model that can do that. You can sort of see the architecture right here.
-
-说话人 1 01:20:56 
+说话人 1 01:20:56
 The one thing that is kind of disappointing that I Learned as I was sort of researching for this lecture is actually they only do MTP with one token ahead. So even though they have this very complicated diagram of how they could do it for many tokens, turns out it's only done for one token. Okay, so now I'm all done.
-
-说话人 1 01:21:12 
+说话人 1 01:21:12
 Moes are kind of now at the core of how you would build and deploy, you know, a really high performance large scale system. And they take advantage of of kind of the scarcity idea that you don't need all of the parameters all the time. And discrete routing is the real big challenge. And this is, I think, one of the big reasons why Moes didn't immediately catch on. It's very scary to have to try to optimize this top K routing decisions. But heuristics somehow seem to work, right? Like they just do. And so there's a lot of empirical evidence. Now, the Moes, at least for flop constraint settings, is just a good idea. It's cost effective. You should do it. So definitely worth learning. Thanks a lot for listening.
-

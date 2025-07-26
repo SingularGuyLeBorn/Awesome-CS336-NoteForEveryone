@@ -1,402 +1,268 @@
 2025年7月14日 下午 10:13|1小时 24分钟 31秒
-
 关键词:
 different things、big difference、model parallelism、communication things、different gradients、different computations、different ways、different sort、different layers、different GPUs、different parts、parallel computations、different dimensions、different operations、different components、data parallelism、big models、key difference
-
 文字记录:
 说话人 1 00:00 
 And now we're going to move on to sort of multi machine optimization. And so the focus today is gonna be all about parallelism across machines. And so the goal today is gonna move from, you know, optimizing a single GPU's throughput to being able to understand the complexities and the details that are required to train really large models, right? And model, when models get large, they no longer fit on a single GPU. So you've got to split up your models across different machines. But also you've got to be able to leverage all of the different, you know, servers that you have in order to train these models quickly.
-
-说话人 1 00:37 
+说话人 1 00:37
 So we've got both compute and memory concerns that we're gonna have to deal with and communication across different machines. It's gonna be quite heterogeneous. We have different kinds of communication across GPUs at different levels of hierarchy. And so this is going to lead to different paralyzation paradigms. People use many different paralyzation strategies altogether at once. And we're going to talk through each one of the very popular ones. And then we'll talk about how you combine them together in order to efficiently train a very large model. And then I'm going to end the lecture with sort of looking at some examples of how people are actually using these parallelization strategies to run their large scale distributed training runs. Okay, and so that's gonna roughly map to the different parts of this lecture. We're just gonna talk about the basics of networking first, and then we're gonna talk about, you know, how do each of these sort of networking hardware concepts map to different paralyzation strategies.
-
-说话人 1 01:35 
+说话人 1 01:35
 And then finally some case studies to close off with to show you how it all comes together, right? So I told you about GPU scaling last week and you know, it's quite impressive seeing this, you know, super exponential curve flops per GPU going way up. But if we want to, you know, rapidly scale out, you know, both our compute and memory. A single GPU isn't enough, right? We're gonna have to wait for, you know, another couple years for this curve to continue going upwards and upwards.
-
-说话人 1 02:06 
+说话人 1 02:06
 So if we want to train a really powerful language model here and now today, well, we have to rely on multi machine parallelism. So if we look at, you know, the world's fastest supercomputers, that's what's being shown on the right here. You know, the fastest supercomputers have, you know, X of flops and x flops of compute. Those are kind of the green lines that you see over there. That's what you're really gonna have to rely on if you're gonna try to train, you know, the biggest, baddest language models today. And so that's the compute side of why you want to think about multi machine parallelism.
-
-说话人 1 02:39 
+说话人 1 02:39
 But we've also got a memory angle for thinking about the same thing, right? So these two are really the core resources and the core concerns that you're gonna have to think about. So in terms of memory, right, many of the models are getting quite big. And of course, you know, memory on GPU's also growing but not quite as quickly. And a single GPU is not gonna be able to fit these models, right? Maybe eventually in the distant future, we won't have to worry about a lot of these. But we've got, you know, billions and billions of parameters. They're not going to fit very nicely into a single GPU.
-
-说话人 1 03:09 
+说话人 1 03:09
 So we have to be very respectful of the memory constraints that we have class. So those are kind of the realities that we have to deal with. And what are kind of the tools that we have to be able to handle these.
-
-说话人 1 03:20 
+说话人 1 03:20
 Well, you know, GPUs, I'm sure you've noticed in the class cluster don't come in sort of singletons, right? A single machine, we'll have multiple GPUs within the same sort of physical rack. And so here's an example.
-
-说话人 1 03:33 
+说话人 1 03:33
 I took this, I think from the GPT Neo X paper, but this is an old example. But the same lesson applies to the H100 machines that you have in class. So here there's eight different GPUs, right? They're connected to the various CPUs through, you know, fast interconnects within each GPUs. You see this NV switch thing at the bottom. This is very fast connections across these eight GPUs. But if these eight GPUs want to talk to GPUs on a different machine, they're gonna have to go through a networking switch. And you see this, you know, purple line, this is HDR Infinite band. You know, that's a much slower connection compared to the NV Link connection, right? You can sort of see the difference in the throughput. That's like about eight times slower per lane. And so this kind of hardware hierarchy that we have is gonna have big implications for how we're gonna end up paralyzing our models in practice, right? And so you can kind of keep this mental model with you as I talk through these things.
-
-说话人 1 04:30 
+说话人 1 04:30
 You know, we have very fast connections within a single machine. And then when we go across machines, it's gonna get slower. And then depending on the kind of hardware we're using, there might even be another level of slowness once we go beyond, let's say, 256 GPU's network together.
-
-说话人 1 04:47 
+说话人 1 04:47
 And many of you may already know this having taken systems or networking classes, but here is a very brief refresher on collective communication operations. And the reason why I'm gonna bring this up is. Is there is one particular important sort of identity or equivalence that you will kind of need to know to really understand some of the finer points of the performance characteristics of the paralyzation algorithms, right? So I'll talk through these and then I'll talk through one important sort of performance implication.
-
-说话人 1 05:17 
+说话人 1 05:17
 So the first one, which all of you probably have heard of, is all reduced, right? So you have, you know, four machines, four ranks in this case, each one having its own sort of piece of data. And what you'd like to do is perform some sort of reduction operation. Let's say I want to sum all these inputs and then I want the output to be sort of copied over to every single machine, right?
-
-说话人 1 05:36 
+说话人 1 05:36
 And this is gonna, you know, have roughly the cost of like two times the total number of things that you're already using. You have a broadcast operation. And here I'm taking a single sort of input from rank 2 and I'd like to copy it out to all of the remaining rank, right? And this is gonna have roughly on the order of one times the total number of sort of outputs in terms of the communication cost.
-
-说话人 1 05:59 
+说话人 1 05:59
 And then we've got reduction where we got different inputs and that's going to be summed up and then sent only to one machine. And then the two that are quite important, even though these may not be quite as common, is gonna be the all gather and scatter, right? So all gather is an operation where I'm taking, you know, a single sort of sub component of, let's say, my parameters from rank 0 and I'm copying it over to all the ranks.
-
-说话人 1 06:22 
+说话人 1 06:22
 Same thing with rank 1,2,3. So each of these are handling different parts of, let's say, the parameters and they're copied over to the rest of the machines. So that's sort of, you know, copying what I have to everyone else. And the reduced scatter, which is, you know, I'm taking each of the rows, let's say I'm summing them up, and then I'm sending the result only to rank 0, right? So this is a partial version of an all reduce.
-
-说话人 1 06:44 
+说话人 1 06:44
 And hopefully this diagram makes it clear how sort of reduce scatter works. And so all gather and reduce scatter are quite important because in some sense they are the primitive by which many of the paralyzation algorithm are going to be built. And so this is kind of an important sort of equivalence or an identity. I will refer to it one or two times as sort of key points in this lecture.
-
-说话人 1 07:07 
+说话人 1 07:07
 If you wanna do an all reduce, right, let's say I got different GPUs, right? ABCD, and each of the GPUs are handling a different data point, right? And so I've got different gradients for each of these data points. And I'm gonna need to sum those gradients.
-
-说话人 1 07:21 
+说话人 1 07:21
 And then I need to pass all those gradients back to the GPUs, right? This is a classic data parallel operation that I might need to do across my four GPUs. So that would be an all reduced. One important thing though is this could be replaced with two operations, a reduced scatter and all gather where a reduced scatter is going to, you know, sum sort of each of the rows and then leave the result of the rows in, let's say, GP 0,1,2,3 respectively, right? And then I'm gonna do a all gather to sort of copy those back out to the remaining GPUs, right? So each GPU now is getting a full sum of a part of the parameters, and then it's going to copy it back to the remaining workers.
-
-说话人 1 08:01 
+说话人 1 08:01
 And in the bandwidth limited regime, this is basically the best that you can do, right? All reduce, the best that you can do is roughly matching, you know, the bandwidth that you can get out of a reduced scatter and all gathering you can convince yourself this by writing out how many sort of communication operations happen in both all reduced and the right hand side.
-
-说话人 1 08:22 
+说话人 1 08:22
 The final thing that I want to sort of briefly touch on before I sort of move on to talking about the paralyzation algorithms. And this is like the one place I'll talk about GPU versus TPU.
-
-说话人 1 08:32 
+说话人 1 08:32
 Most of the discussions today can actually abstract out the underlying hardware. But there is actually sort of one important thing that I'll mention upfront so that I can refer to it later as I talk through this.
-
-说话人 1 08:44 
+说话人 1 08:44
 How do we network together different machines or different sort of accelerators in sort of GPUs? Well, you know, as I showed you in the GPT Nox slide here, how in the GPU world this generally works is you've got nodes, single machines that contain, let's say, eight GPUs, and then you've got these switches that connect fairly quickly to each other. And these machines are connected all to, all up to about 256 GPU. So that's an important threshold up until which you have very fast arbitrary communication between machines. And then above that, you're actually going to need sort of much more slow communication, these sort of leaf switches and spine switches, once you go beyond sort of roughly a single rack's worth of GPU.
-
-说话人 1 09:28 
+说话人 1 09:28
 On the other hand, you know, if you look at sort of TPU design from Google, they actually take a very different approach to networking. Sort of their machines, you've got a single sort of TPU chip and they all talk to their neighbors very quickly. And so this is a very sort of easily expandable, what they call troidal mesh, but you can only talk to your neighbors. And the reason why I'm talking about this right after the all reduce slide is if you think about, you know, doing these kinds of collective communications like all reduce or reduce matter, you can implement them just as a. Additionally, on a torial mesh, then you can on an all to all connection. And so if you're optimizing purely for collective communications, it makes sense to think about things like TPU networking rather than GPU networking.
-
-说话人 1 10:11 
+说话人 1 10:11
 I'll talk a little bit about pros and cons of this later as I go through different paralyzation operations. So, okay, so just to put this together, right now we're gonna start talking about a new unit of sort of compute, right? Instead of the GPU, the new unit is the data center. The whole data center is gonna be the thing that we're going to be doing.
-
-说话人 1 10:29 
+说话人 1 10:29
 And now we're going to try to come up with algorithms and sort of sharding strategies that get us two different things. The first one is linear memory scaling. So as I scale up the number of GPUs, the sort of biggest model that I can train is going to scale linearly with that, right? So I can train bigger and bigger models if I really want to, right? I also want linear compute scale, right? As I get more and more GPUs, the useful computation that I'm doing to train the model scales linearly, right?
-
-说话人 1 10:58 
+说话人 1 10:58
 And finally, a lot of this, these algorithms are going to be implemented by just calling these very simple collective communications primitives in various ways. And so when we think about the performance characteristics of these parallel algorithms, it suffices the reason about, you know, basically counting the collective communications primitives. So that's kind of an important way to think about these. We don't go all the way down to the low level implementation of these algorithms here. Okay, any questions? Part 1. Yes.
-
-说话人 2 11:27 
+说话人 2 11:27
 But from the previous slide, doesn't mean that's better to do to reduce scatter from us all gathering rather than the hour.
-
-说话人 1 11:33 
+说话人 1 11:33
 Right. So, so this slide, right? So the conclusion of this slide is that they're equivalent, right? And I think if you think about something like parallel, doing gradients of sentence parallel, I'll reduce the very natural operation to do because you'll scatter your, sorry, you'll distribute your data to different machines and then you'll have to all reduce your gradients together, right? But what I'm saying is this very natural thing to do of all reduce can actually be written as a sum of two different operations in their equivalent. So there's no performance sort of character hit by going from this left representation to this right one, at least in bandwidth. And that's going to have, you know, important implications in maybe like five slides. So you can wait a little bit to see, you know, why I mentioned this. Okay. Any other questions? Okay. Okay.
-
-说话人 1 12:23 
+说话人 1 12:23
 So now we're going to get started. In some sense, this is kind of the exciting algorithmic meet of the lecture. And there are three kinds of parallelism, you know, strategies, parallelism, things that we should really be thinking about. So the first one is data parallelism. So data parallelism at a high level is the idea of, I'm going to roughly copy the parameters across my different GPS use. I'm not going to worry about splitting my parameters up, but I will take my batch and I will split my batch up and different GPUs or different machines will get different slices of my batch, right? So that's data parallelism. There's lots of subtleties in how we execute that.
-
-说话人 1 13:02 
+说话人 1 13:02
 Model. Parallelism now is starting to say, okay, I don't want all my GPUs to have all the different parts of my model, right? As my models get bigger, that's gonna be a very big problem. So I need to cut up my model in very clever ways. And I need my GPU to handle different parts of my model, right? So that's gonna be model parallelism.
-
-说话人 1 13:19 
+说话人 1 13:19
 And then the final piece is kind of activation parallelism. We don't really think too much about activations in our day to day lives because, you know, the Pi core channels it very transparently, right? But as the models get bigger and the sequence lengths get longer, the activation memory starts to be a really big problem. So if you want to train these really big models with big batch sizes, you have to somehow manage the memory footprint of your activations. And so we have to split those up too. So there's some ways to handle that, right? And when we put all these together, we will have all the tools we need in order to scale up both compute and memory gracefully as we have lots and lots of machines. So these are kind of the core conceptual objects.
-
-说话人 1 14:02 
+说话人 1 14:02
 And now we're going to talk about implementing each of these ideas efficiently. So the starting point of data parallelism is just sort of SGD, right? If we're doing very naive batch stochastic gradient descent, the formula, if we're doing this, looks like this equation that I have, you know, right here on the slide right here. I'm taking a batch size capital B, and I'm gonna sum up all those gradients and I'm gonna update my parameters, right? So naive data parallelism is just saying, all right, take your batch size B, split that up and send that to different machines. Each machine will compute some part of the sum and then I will exchange all of my gradients together to synchronize, you know, after each sort of before each gradient step, I will synchronize my gradients. And then I will take a parameter update. Right.
-
-说话人 1 14:50 
+说话人 1 14:50
 So now I've been talking to you about compute and memory scaling and all these things. So let's just talk through, you know, what it looks like for each of these, right? So for compute scale. Scaling data parallelism is pretty great. Each machine, hgpu is going to get B over m examples. And if my batch size is big enough, you know, each GPU is going to get a pretty decent batch size, micro batch size, and it's able to hopefully saturate its compute.
-
-说话人 1 15:16 
+说话人 1 15:16
 Okay, so that's good. What's the communication overhead? Well, I'm gonna have to transmit twice the number of my parameters every batch. Remember, on all reduced is gonna roughly be twice the amount of stuff that you're all reducing in terms of communication cost. And so this is okay if the backsize is big, right? If my backsizes are really big, I can mask the communication overhead of having to synchronize my gradients every now and then.
-
-说话人 1 15:42 
+说话人 1 15:42
 Memory scaling, I'm not touching this at all, right? Every GPU needs to replicate the number of parameters. It needs to replicate the optimizer state. It's pretty bad for memory scaling, right? So if we didn't have to worry about, you know, memory at all, this is a okay strategy. But I think in practice, memory is a problem, right? Like I think everyone of you sitting here has experienced, you know, trying to  big model onto a GPU and Pytorch telling you all you're out of memory. And this is, you know, really a problem with your training as well because if you can fit, you know, more and more batch sizes, that's gonna make the data parallel, more efficient. And so ideally, you'd like to save on memory.
-
-说话人 1 16:24 
+说话人 1 16:24
 So let's take a closer look at the memory usage of naive data parallel, right? And the memory situation is actually worse than it looks. It's actually quite terrible. Because, you know, you've done this in Assignment 1, but we can sort of think about how many copies of our model we need to sort of store. And it's very large, right? Depending on the precision by which we're doing some of our training, you're going to need to store something like 16 bytes of data per parameter. And in fact, you need to store something like five copies of your weights.
-
-说话人 1 16:57 
+说话人 1 16:57
 And this is really quite bad because if you just want to think about your model parameters, technically you only need two bytes, right? So where did that factor of 8 come from? Well, at least you need gradients. And if you're computing your gradients in BF16, that's another two bytes. But then your optimizer state kind of shows up. And that's a really big problem because you've got four bytes of sort of master weights, the things that you're kind of accumulating into SGD, like these intermediate sort of sums that you're doing. You need, you know, 4 or 2 bytes for Adam's first moment estimates. Because remember, Adam keeps track of historical gradients. And then Adam also needs second moment estimates, kind of like the variance of the gradients that you've gotten in the past. And like that's gonna need another four or two bytes.
-
-说话人 1 17:40 
+说话人 1 17:40
 And so what originally looked fine is actually now looking quite grim. And so, you know, the 16 x, if I just sort of draw it as a picture, you know, you realize that most of your memory usage, at least in terms of kind of parameter memory, is really being dominated by the optimizer states of your Adam optimizer, right? So your memory consumed is gonna be, you know, a function of, you know, how many bytes are being used for your optimizer state. And that's generally going to be even more than the core parameter and gradient memory usage.
-
-说话人 1 18:16 
+说话人 1 18:16
 And so for a simple example of like a 7.5 B model distributed over, you know, 64 accelerators, you're using a ton of memory, right? And this memory scales linearly upwards, total memory at least, scales linearly upwards with the number of GPUs. So that's no good at all.
-
-说话人 1 18:34 
+说话人 1 18:34
 But if once we sort of look at this picture, we get some very simple ideas, you might wonder clearly, or maybe not clearly, you know, I need the parameters and gradients to be copied across devices that seems, you know, necessary to do data parallel, but do I really need all the optimizer states to be on every single machine? Right? And once you ask that question, you know, you can maybe get to the second row here. And this is going to be called optimizer state sharding. And if we could do that, then at least in this case, we can go from 120 gigabytes of total memory usage down to 31.4. And then maybe we can start sharding the gradients and then now we can get to 16.6 gigabytes of memory usage. And then if we also shard the parameters, we can go all the way down to 1.9 gigabytes of memory usage. And that would be a pretty good place to be because now we sort of fully sharded out, you know, all sort of the optimizer state and parameter and gradient memory that we need. Yes.
-
-说话人 2 19:33 
+说话人 2 19:33
 Optimizer state if like if we're doing, I guess, the grading competition on each of them in the scattered, like how can we have our referral?
-
-说话人 1 19:45 
+说话人 1 19:45
 That is a very good question. And the question is, how can we shard the optimizer state? You know, when we're doing data parallel, right, GPU 0 has to be responsible for Data Point 1. So clearly, it needs to know about all the parameters and update it. So how can it possibly shard the optimizer state? And in a way, I think zero, which is what this is, the zero overhead data parallel sort of optimizer.
-
-说话人 1 20:07 
+说话人 1 20:07
 This is a very, in some ways, clever idea because it shows you that even when you're doing data parallel, you don't actually need to copy everything onto every machine, right? You can be really clever about how you do sort of communications to avoid all of this. So I will talk through exactly, this is a great question.
-
-说话人 1 20:25 
+说话人 1 20:25
 So what we're going to do is we're going to split up the optimizer states, as I said. So the first and second moments are now split up across all of the GPUs, but everyone has the parameters and the gradients, right? So why is this important, right? If I have the parameters and gradients, let's say I'm GP zero, I have the parameters and gradients for everything. That's enough information for me to compute the full gradient, right? Like the full gradient update for this example can be computed. The only thing I can't do is I can't take that gradient and take an atom step, right? I can't update my parameters unless I see all of the optimizer states, right? So that's kind of the key idea.
-
-说话人 1 21:00 
+说话人 1 21:00
 And so now what's going to happen is GPU zero is going to compute the gradients for everything, but GPU zero is now only responsible for updating the parameters for the Shard that they own, right? And that's kind of the key idea, right? We're gonna distribute the work of updating the parameters, and then we're gonna synchronize the parameters back. So let me show you in sort of much more gory detail how this works and sort of the reason why it's called zero overhead.
-
-说话人 1 21:28 
+说话人 1 21:28
 So step 1, right, every GPU gets a different data point, let's say, right? I'm just going to simplify all this batch computation. I have GPU 0 through, let's say, 4, and every GPU gets a single example and they compute a full gradient on the example that they own.
-
-说话人 1 21:43 
+说话人 1 21:43
 Now what I'm going to do next is I'm going to reduce scatter the gradients, right? So I'm gonna send the gradients that, you know, I'm going to collect in some sense the gradients that each GPU owns. So GPU zero, let's say, is responsible for this first quarter of the parameters, right? So the parameters are the y axis here and the X axis here is GPUs. And so what we're going to do is we're going to reduce scatter to make sure that GPU zero has all of the gradient information from all of the other GPUs for the subset of parameters that it is respond possible for.
-
-说话人 1 22:16 
+说话人 1 22:16
 Right? So now it gets this gradient information from GPU one and GPU two and GPU three. And that's all reduced into GPU zero. Hopefully that's clear now. GPU 0 has all the information it needs to update its own parameters because it has the optimizer state corresponding to this first part. It has a full summed gradient for this first part.
-
-说话人 1 22:38 
+说话人 1 22:38
 And now, so it's going to take a grading update on theirs part of the parameters using gradient and state, right? And so that now I have the full updated parameters for this subset in my GPU zero. And all I need to do is all gather all of the parameter, updated parameters back into all the ranks. Okay, so there's many questions here. I'll start here. Yes.
-
-说话人 2 23:02 
+说话人 2 23:02
 And understand permission.
-
-说话人 1 23:04 
+说话人 1 23:04
 Right? Or is that, sorry, 6,16 number of primers that's per machine, right? Or is that total? So the question was whether the number of France communication cost was per machine or it's total. Here it's going to be total because so this is going to be like one fourth of the parameter is going to be sent three times to this machine and then you repeat that four times, right? That was also total. Oh yeah, two times number of parameters is total because each block is gonna have to be sent to every other kind of machine. Okay. Okay. Yes.
-
-说话人 2 23:45 
+说话人 2 23:45
 So this question is not unique to what you're showing here. Made me think of it. So the Adam W optimizer showed seems to assume like Lark largely assume independence of parameters, but we've drawn all these like diagrams that show the opposite, you know, like we have connected nose and all of them. And it seems especially Crissy when we have, when we're trying to split these and update them separately, does that create any issue?
-
-说话人 1 24:12 
+说话人 1 24:12
 Okay, so the question was, Adam, W seems to assume parameters operate independently. I'm assuming because you're saying like we track like gradient sums, like, and then we diagonally sort of update the parameters, right? But we know that's not fully diagonal. And so is there a problem? There have been, you know, better attempts at improving sort of atomw to not just be diagonal. There's things like K FAQ and all these other like second order style optimizers that people have come up with. They haven't dethrown data, even though they do have their advantages. And there's some really interesting things that you can do with these kinds of improved second order preconditioning methods.
-
-说话人 1 24:50 
+说话人 1 24:50
 Yes? What is the rows that we're reducing over? So you're asking like, what is the rows of this picture? Yeah, so imagine this is like parameters here in the row. So like GPU zero is responsible for some number of parameters. So this is a block of parameters top. And so when we do reduce scatter, we're saying take the gradients, for example, 0 for this block of parameters. Take the gradients, for example, 1 for this same block of parameters, and then sum them all and put them in rank zero. That's kind of what we're saying here. Cool. Okay. And kind of the key thing here is we're doing a reduced scatter in an all gather, right? And if you kind of remember what I was saying before, well, a reduced scatter in an all gather has the same cost as an all reduce, right? And so there is a little bit of a surprising magic thing that happened here, which is that, well, you know, we were doing it all reduced before on all the gradients to make sure everyone's gradients were synchronized. And that cost us two times the number of parameters.
-
-说话人 1 25:54 
+说话人 1 25:54
 But if we're kind of clever about how we're doing the updates, well, we can do a reduced scatter and all gather. And in between the two steps, we can do some computation and that gives us the same amount of compute communication cost. But now at least for the optimizer state, we fully sharded the optimizer state across the model. So zero stage 1 is in some sense free in the bandwidth limited regime and gives you memory wins. Yes.
-
-说话人 2 26:22 
+说话人 2 26:22
 Suppress the memory contribution of the higher notes. Do people modify Adam to the higher moments.
-
-说话人 1 26:32 
+说话人 1 26:32
 When. What do you mean by you can suppress the higher order contributions.
-
-说话人 2 26:37 
+说话人 2 26:37
 Right? So for first and second moments, the amount of memory, okay, for GPU is divided by, yes. So it seems like you might as well shut it.
-
-说话人 1 26:52 
+说话人 1 26:52
 I see. So you're roughly saying like you could track way more optimizer state. To rephrase what you're saying, you could have even more complicated optimizer state because you can divide that by the number of GPUs. While this is true, what we're going to do next is we're actually going to make the other components scale with NGPUs. So that's gonna make things in some sense not free anymore, right? Like optimizer state will continue to be the bottleneck if we can divide everything by the number of GPS. So hopefully that's a reasonable, convincing answer. Okay, so we're gonna build up stage by stage to zero stage 3, which is more complicated, zero stage 2 is still relatively simple.
-
-说话人 1 27:29 
+说话人 1 27:29
 So now hopefully that optimizer state sharding trick made sense. I think that's very cool. So now we want to shard even more stuff. So I want to shard the gradients across the machine. So roughly we can do the same kinds of trick as stage 1, but there is one additional complexity. And so what's the additional complexity? Well, you know, we can never instantiate a full gradient vector, right? If I ever do the full backwards pass and I try to compute a full gradient vector, I might go out of memory, right? So I want my maximum memory usage to basically be bounded by this, which is like full parameters, sharded gradient, sharded optimizer state.
-
-说话人 1 28:09 
+说话人 1 28:09
 And so what we're going to have to do is when we do the backwards pass, as we're computing the gradient vector, we can't instantiate the full gradient first and then do communication. What we have to do is, as we compute the gradients backwards, as soon as we compute like a layer's worth of gradient, we're gonna have to send that over to the corresponding sort of GPU that it belongs to, right? So this is kind of how it works. It's roughly the same idea, right?
-
-说话人 1 28:34 
+说话人 1 28:34
 So now everyone has their own batch component. Everyone incrementally goes backwards on the computation graph. And let's say we're gonna operate layer by layer, right? So layers are sharded, you know, atomically to different GPUs.
-
-说话人 1 28:46 
+说话人 1 28:46
 So what we're going to do then is as we go backwards on the computation graph after we compute a layer's gradients, immediately call a reduction operation to send this to the right worker, right? So a layer belongs to some worker. Maybe it's like GPU No. 2 in this case. So we're just going to immediately reduce that, send that to the worker at that point. And gradients are now no longer needed. You know, I don't need to store the gradients on rank 0,1, and 3. So I can immediately free that.
-
-说话人 1 29:13 
+说话人 1 29:13
 And then now we continue this process. And so all the machines have their fully updated gradients. And now they have a full gradient for their share of the parameters. They have a full optimizer state for their share of the parameters. Each machine can update their parameters and then all gather the parameters back together, right? This looks like it's maybe more communication because you're doing this kind of like reduction operation every layer. But this is only for a small amount of parameters, right? It's sharded. And so the full communication remains the same. So zero stage 2 has some more overhead because we have to synchronize layer by layer and make sure that the gradients are properly sent to the right workers. But the overhead is pretty minimal, right? It's still very simple, fairly straightforward. Now the last one of these. 0. Stage 3 is more complicated for sure, but it allows you the greatest win of all, which is now essentially everything is divided by the number of GPUs that you have. You can get the maximum savings possible. And if you've heard of, you know, FSDP, right, you've probably used that in some aspect of your life in the past. FSDP is exactly zero stage 3. So now you'll kind of hopefully today know how FSDP works. So the same idea applies. We're gonna shard everything, including the parameters. We're gonna do the same thing as zero stage 2, which is we're gonna incrementally communicate and compute things so that we don't keep these big vectors of gradients flying around and we're going to send and request parameters on demand while we're going stepping through the compute graph, both for the forward and backward passes. You know, as we go through, we're going to send things around on demand. And of course, the key is to do this with as low overhead as possible. I think the thing that's really surprising about FSDP is not that this is possible, but that this is possible with relatively low overhead. You'll see kind of why it's a little overhead in the next slide. I admit that this is maybe not the most friendly graphic to start with, but this is, I promise, the baby version of SSDP. The next slide is a little bit more involved, but conceptually, this actually explains everything. So what we're doing is, you know, we're gonna have model weights and we're going to be all gathering the model weights as we go. So for each layer, you know, no single GPU is gonna have all of the parameters, right? So I can't do the normal thing of saying, oh, GPU zero, go ahead and run a forward pass. That's not possible. So GPU zero, let's say, is, let's say, only owns, you know, the bottom most layer. So it does that computation and then it stops and says it requests all of the parameters from all the other workers. So it stops and it does all gather, which is right here. You see there's an all gather step. It gathers all the parameters. Now it has the parameters that it needs to do a forward. So if you can step forward and sort of compute the layer that it didn't have before, and then now it can free the weights, it doesn't need the weights anymore. Get rid of it. Now I can all gather the next layer. I can do another forward, free the weights, and I can repeat this, right? The activations have to be stored. So the activation memory here is growing, right? So that's going to be an eventual problem. But if we ignore activations for the moment, this is great because I load a layer, I do afford, I free it. You know, the memory overhead is very low here. Once I get kind of to the end. Now I can do the same thing with a backward path, right? I can call backwards. And every time I move backwards through the neural network, you know, I all gather for the parameters that I need. You know, I can do a reduced scatter to update, you know, after the gradients that have been computed. And now I can free the weights, I can free both the gradients that I don't need and the parameters. And at the very end, you know, I've got a fully updated model. And so we've got three different operations that we've got to worry about here. We've got an all gather, we've got another all gather, and then we got another reduced scatter basically to update the model after we take the gradient update step. So conceptually, this is just a single step beyond zero stage 2, but you do kind of see that there is sort of more overhead. So the total communication cost is now higher, right? We were kind of, before we had two times the number of parameters. Everything was kind of free in some sense. Now it's not right? There's total three times number of parameter communication cost and there's gonna be, you know, cost associated with waiting for these communication things to finish. But I think the really cool thing about FSDP is it's actually surprisingly low overhead. You might imagine that because we're doing this crazy thing of asking for and sending parameters back and forth all the time that, you know, things will be really slow, right? Like we have to be communicating all the time. But you can do this core idea of overlapping communication and computation. So you want both your sort of, you want your GPU to be working while sort of the communications happening in the background, almost like prefetching. So that by the time you need some piece of information, it's already loaded up, it's already been communicated to you, and you're good to go. And so I'll talk through this example at the bottom here, but this is kind of the key to making SSDP actually somewhat efficient. So let's imagine we have a computation graph that looks something like this. W 1, w 0+ w 2, w 0 times x. Some input, let's say, is y, right? So some very simple computation graph like this. And then you might run FSDP and you will get actually a computation and communication that looks like this block diagram at the very end here. So the CPU, you know, it's nice that we did the Insight Systems example last week because hopefully this diagram will now be clear, right? The CPU is going to basically dispatch a bunch of commands asking, you know, the communication part of the GPU to. Basically go and fetch some parameters. It's going to dispatch things to the GPU to say, okay, alright, do some matrix multiplies. And it's gonna run, you know, far ahead in some sense of the GPU, right? We've seen this when we were looking at the profiler last week. Now let's look at the sequence of both communication and computation that happens on device. Now remember that I need to sort of gather things on demand. So at the very beginning, I have to make sure that everyone has the weights for layer 0 or w 0 here. So I do all gather zero and I'm gonna wait for that to complete. And once that's completed, I can do a four step on W0. I can sort of compute x times W0, let's say, right at this point, you know, altogether 1 starts at the same time that all gather 0 ends. So as I'm doing this matrix multiply, I'm basically already starting to load the next parameters that I need. Of course, my communication is slower and so there is some gap, but I end up much quicker than sort of the initial load. So now forward one can happen and in the background, once again, I've started to load, you know, parameter No. 2. And this yellow slice here, I'm now freeing, you know, the parameters associated with forward 1 and then now the other thing here is I'm repeating computation w that 0 is used twice. And so I don't need to communicate this again. This happens very quickly and I can sort of do this very quickly, right? I have 4,2 now already loaded before sort of I needed it. And so there's no bubble here. And then I can free No. 2. That's the entirety of the forward pass. And you see that the gaps are relatively small here, and we were able to do a lot of loads before the compute needed to happen. And so by doing this very clever thing of kind of queuing the requests for weights before you actually need them, you can avoid a lot of the overhead associated with communication. And then now at this point, you know, of 4,2, I'm done with the forward pass. I can free weight No. 2 and I start on the backward pass. And you see that, you know, all gather two for the backward pass is already done. And so I can start on backward 2. Backward zero, weight zero's already stored. So that's done. And then the high overhead here happens in the backward pass because I need to do reduced scatters and it all gathers and so on and so forth, right? Hopefully you see this picture and you say, wow, it's kind of surprising that even though we're doing this crazy sharding, right? Like if you go back to this picture, you know, we fully sharded the parameters, gradients and optimizer states, but the total bandwidth that we need is only three times rather than two times. So that doesn't seem too bad. And sort of the actual, you know, bubbles that we see are not horrendous, right? The communication is almost being fully being utilized and the computation is installing for very long. So we're actually making pretty efficient use of the resources that we do have, which is cool.
-
-说话人 2 37:43 
+说话人 2 37:43
 Okay. Yes. Where do we get like Refeshed 2? It's like, to my understanding, but like, let's do the GPU and memory is like, cool. Where does the weights get.
-
-说话人 1 37:53 
+说话人 1 37:53
 Protection? Yeah, so you need a buffer in which you can store these weights. And so, you know, the, this picture is not quite right. Like you will have some overhead that you need associated with reading these weights for the current layer. And also the other big elephant in the room is I haven't talked at all about activation. That's gonna be like a big chunk cuz you've got a big set of activations for a full model that are sort of living here in some sense.
-
-说话人 1 38:15 
+说话人 1 38:15
 Cool, right? Okay, so this is kind of distributed data parallel, like zero is in some ways the way that people do distributed data parallel efficiently. And so there's different stages. And, you know, stage 1 is it's basically free, right? It's doing the same communication pattern as naive data parallel, but you get to shard your optimizer state. That's great. You might as well always do, right? Zero stage 2 is twice the number of parameters. So the total bandwidth consumption is the same, but there is additional overhead. And having to do this like incremental freeing of the gradients as you go backwards zero stage 3 is more involved. You do three times number of prem communication cost, but it's not so bad, right? Like we did have some overhead in the diagram that we saw before, but if you really cleverly mask your communication patterns, it's actually pretty good. And so people use data parallel even for fairly slow sort of links in your networking pattern.
-
-说话人 1 39:16 
+说话人 1 39:16
 Okay, and this is also conceptually very simple. One of the advantages here is, you know, especially data parallel doesn't care too much about the architecture, right? I didn't talk at all about how we actually implement a transformer in any of this. It's all very abstracted. And so this is one of the reasons why, for example, FSDP is so popular. It's very easy to write a wrapper that parallelizes sort of arbitrary neural networks without having deep knowledge or deep introspection and what the architecture is actually doing. And so, you know, here's some examples. I worked out some examples because I'm always sort of running out of memory on my GPUs. And you can kind of see what's the maximum size of the model that I can fit on eight times a 180 gig, you know, node. And so for. For baseline, you know, you might end up with like, oh, I can fit barely 6 billion parameter model. Whereas I think if I use zero stage 3, you know, I'm able to fit something like a 50 billion parameter model, there's big savings in my ability to fit larger and larger models by doing things like FSDP to cleverly save on memory. So, okay. Oh, sorry, there's a question. Yes.
-
-说话人 2 40:24 
+说话人 2 40:24
 I guess I'm a lot. I'm curious to like where the difference then once you share the parameters, what's the difference from that? And I don't know.
-
-说话人 1 40:30 
+说话人 1 40:30
 Yeah, so model parallelism is really fundamentally about making sure that the parameters just like live in separate, like, let me see if I can find. Like, so in some ways it's true that we have started the parameters. So you could call this a kind of parallelism. But the whole point of model parallelism is to make sure that the parameters just live entirely in one machine. We're not gonna like try to ship them across in various ways. Only the activations are gonna get shipped across. And so you'll see very different discussions in the model parallelism section, like the focus there will be on communicating activations rather than communicating parameters. And that would be a big difference. Yes.
-
-说话人 2 41:12 
+说话人 2 41:12
 Let me see if you parameters on your condition. Why are you why you hung an oil gather. Alright, so then.
-
-说话人 1 41:20 
+说话人 1 41:20
 Oh yeah, so you're asking about this step, like why are we doing all gather to gather weights onto all the machines? Is that when they're only on one machine? Is that right? So we need to basically put, we need to take the weights that live on one machine and scatter, or does it gather a scatter? Sorry, I wanna make sure I get this right. The terminology is a little bit sketchy for me. So I want to make sure I get. Sorry.
-
-说话人 1 41:53 
+说话人 1 41:53
 Yeah, so what we wanna do is the same as this, right? So each machine is gonna have some parameter that I want to sca gather across all the machines in order to make sure that each layer is sort of properly sort of replicated across all the GPUs.
-
-说话人 1 42:12 
+说话人 1 42:12
 Is that the right question that you're asking? Or are you saying like, is there a simpler primitive that we could have invoked? Like, are you saying broadcast is the right object rather than all gather? I think maybe it's written that way because of some exceptions about layers not living on individual GPUs, but I'm not 100% sure I agree with you that like broadcast should be able to do the same thing if the parameters live on only one machine. Okay, cool. Alrighty. Let me make sure where. Okay, got it.
-
-说话人 1 42:46 
+说话人 1 42:46
 Okay, right. So there is a key resource in data parallel. And this is actually an important idea that I want you to remember. With data parallel, batch size is actually a really critical resource in the sense that you can't paralyze greater than your number, sorry, than your batch size, right? Because you can have at most one example on each machine. You can't go to fractional examples per machine. And so this means that, you know, there are, if there's limits to your batch size, right, you stop being able to use data parallel and there's diminishing returns to batch sizes. So, you know, in your assignment one, you may have played with varying batch sizes, but you kind of know that as you crank up the batch size past a certain point, you start to see sort of fairly rapid diminishing returns to, you know, your optimization rates. And there's lots of papers written on this.
-
-说话人 1 43:39 
+说话人 1 43:39
 Opening has a really nice one on something called critical batch sizes, where they basically argue that, you know, past a certain point, you have very rapid diminishing returns in how much each example is contributing to your ability to optimize. Like basically the intuition is that below a certain point, you have a lot of gradient noise and reducing that is very valuable. But at a certain point, you're really fundamentally limited by the number of gradient steps you're taking rather than variance reduction. And so that basically means data parallel alone isn't going to get you to arbitrarily large parallelism.
-
-说话人 1 44:11 
+说话人 1 44:11
 And this batch size thing is a really important resource, right? You wanna, essentially you have a fixed maximum batch size and you can spend it in different ways. And I'll talk about that later because other kinds of parallelism also benefit from having sort of bigger batches. And so you use your batch size in certain parts.
-
-说话人 1 44:28 
+说话人 1 44:28
 Okay. And issues are going to remain with Data Parallel. You know, zero stages 1 and 2 don't let you scale memory. Zero stage 3 is nice in principle, but it can be slow. And maybe more importantly, and this, you know, relates to the earlier question, it does not reduce activation memory, right? I ideally want to like cut up my model entirely and make them live totally separately because then the activation memory would also sort of be reduced. And so now I want better ways to split up the model so I can fit these really big models. In these GPUs, and so that's going to bring us to model parallelism. We want to scale up in memory, you know, without changing the batch size. And we want an alternative access where we don't need to spend or basically have big batch sizes in order to parallelize. And so what we're going to do is it's going to split up the parameters across GPUs. And in some ways, that's like 0,3, but we're not going to communicate parameters anymore. We're going to pass activations around and that's going to be different. And sometimes activations are going to be much smaller than parameters and that'll be, you know, very good for us. So we'll cover two different types of parallelism.
-
-说话人 1 45:39 
+说话人 1 45:39
 I'm going to talk about pipeline parallel, which is conceptually simpler, but much more horrible implementation wise, and tensor parallel, which is conceptually maybe less obvious, but honestly much nicer to implement and more commonly used. And they're gonna correspond to two different ways of cutting up the model. So I think pipeline parallel is maybe the most obvious way to cut up a neural network, right? You know that a deep neural network comes in layers, right? So if I have layers, a very natural place to cut a network is to cut it up at the layer boundaries. And so each GPU is going to handle some subset of the layers, and I'm going to pass activations around, right? In this case, each layer belongs to a GPU and GPUs are gonna pass activations from one to the other. And in the backwards case, it's gonna pass, you know, the backwards gradients backwards from GPU 3 to 0, right? Okay, so that's cool. That's great.
-
-说话人 1 46:35 
+说话人 1 46:35
 What's wrong with this picture? Well, I think you should see that most of your GPUs are idle most of the time. This is actually quite terrible utilization. And so if I do this naive kind of parallelism that I described before, right, so if I have, you know, each layer having a forward and let's say, have a single example, that's going to result in a diagram that looks like this. So different rows in this picture are different layers and also different GPUs and the X axis here is time where I'm going from left to right.
-
-说话人 1 47:07 
+说话人 1 47:07
 So what do you see? Well, you know, I first compute my first layer at the very left here. And then the activations get past the second layer. GPU two wakes up and it's like, alright, it's my turn. It does its job, passes to GPU three and then GPU four and now the backwards passes can begin and so on and so forth. And you see kind of this gigantic, what people call bubble. This is a big overhead where you're doing absolutely nothing and you see that the GPS are active one over end of the time.
-
-说话人 1 47:32 
+说话人 1 47:32
 So in some sense, this is the worst possible parallelism of I've added four GPUs, but I get the throughput of a single GPU, right? And so one thing you can do is, you know, you can be a little bit more clever about what you do and you can say, all right, I'm gonna have a pipeline, right? I'm not just gonna cut things up in layers. I'm gonna have a sequence of things that need to be processed by each GPU.
-
-说话人 1 47:55 
+说话人 1 47:55
 So now let's say I have a micro batch, right? So each machine is going to handle sort of four examples. And what I'm going to do is, you know, I can finish my first example, my first data point, and I can send off the activations for that to my second GPU as soon as I finish. And then I can then get started working on my second data point, right? And so now I've overlapped sort of, you know, communication and computation. The second GPU can start working while the first GPU continues to work. And now the size of the bubble can potentially be reduced by having bigger batch sizes, right? And you can hopefully see why I said before that batch sizes are a resource. If you have a finite batch size and you have pipeline parallel, you can use that same batch size to make your pipeline bubble size smaller, for example, or you could use it to do data parallel, right? So there's many different ways that you can take your single batch size and then split it up into different ways. Okay, so now your micro batch size can control the bubble time. And in fact, you know, the amount of the ratio of your overhead to the useful compute that you have is the number of stages minus 1 over the number of micro batches. So if you have big batch sizes, pipeline parallel could potentially be efficient. But as we said before, you know, batch sizes are finite. We can't just crank that up to whatever value that we want. So, you know, in general, pipelines seem really horrible. You know, why do we do it? Why do we incur this cost of a bubble in order to, you know, paralyze?
-
-说话人 1 49:28 
+说话人 1 49:28
 Well, there's a couple of reasons. Pipelines help save memory compared to data parallel. I mean, 0,3 will also shard the parameters, but this also shards sort of the activations, which is nice. Pipelines can also have good communication properties, right? It only depends on activations. It's also point to point. So it's possible that depending on your topology and depending on what you have, pipelines might actually be very favorable for the slower parts of your network. And so, you know, pipeline parallel is often gonna be used on your slower network links. So. Internode, or even sometimes across different sort of racks or across different data centers, you might do, actually not data centers, across different racks, you might do pipeline parallel, right?
-
-说话人 1 50:11 
+说话人 1 50:11
 One of the examples of a thing that I was recently told by some Google folks is, you know, they were saying actually one of the big advantages of TPUs is that we don't have to do pipeline parallel very much because, you know, all of our connections are much bigger, right? Like they have this big toridal mesh. They don't have this limit at 256 GPUs where they're suddenly going towards a slower network link where you might want to switch to pipeline parallel, right? So that's a real world kind of example of when you would start to think about pipeline parallel. And so this is an example from an Nvidia paper. I'll talk about this paper in much greater detail later. They've done some really nice work showing sort of performance characteristics of different kinds of parallelism. But you kind of see with batch size 8, as you increase the pipeline parallel size, the number of devices, your, you know, utilization per GPU sort of starts to really drop off. Whereas if you have a big batch size of 128, you can get away with, you know, pretty good utilization for reasonably sized pipeline parallel, right? So batch sizes are really key to hiding the size of the bubble. Otherwise, you have issues. Of course, you can do, you know, different kinds of pipeline, sort of pipeline strategies. So instead of, you know, having these sort of like standard patterns for scheduling the bubble, you can sort of cut things up into finer pieces where you're sort of assigning different stages, assigning different sublayers to different device, and you're doing different computations at different parts. You can then sort of interleave the pipeline better and sort of an advanced version of this that I want to spend a moment talking about, and this is very clever, is zero bubble pipelining or I think in deep seeks lingo, I think they call it dual pipe, but the core single trick is the same.
-
-说话人 1 51:58 
+说话人 1 51:58
 So here, if you think about it, let's say we're doing, you know, the backwards pass to compute gradients. You can split this up into two different components. The first part is about, you know, back propagating the activations. So this is, you know, as I go down sort of the residual connections, I need to compute essentially the derivative with respect to the activations. And then, you know, as I sort of, you know, get to a parameter, I also want to compute the gradient itself, like how I'm going to update the parameters, not just how do the activation change with respect to sort of the previous layers.
-
-说话人 1 52:31 
+说话人 1 52:31
 And so to give you a concrete example, let's look at this bottom left diagram over here, right? So in this diagram, you see the forward pass. This is a single MLP. So we've got multiplied by a weight. I do a non linearity and then I'm just going to output the non linearity. Right. So this is kind of a naive, you know, single part of MLP.
-
-说话人 1 52:49 
+说话人 1 52:49
 Now let's look at the backwards, you know, I have sort of the derivative respect to the loss it comes in and then I can compute, you know, how that's going to change the axis, the inputs to my MLP. So this is in some sense the derivatives reflected the activations here. And then as I compute these, of course, I can use them to compute the gradients that I need to update my weights, right? But the important thing is this part of computing the gradients for the weights, this can be done whenever, right? There's no sort of dependence of this. And so I can rearrange the scheduling for this computation to any part of the computation graph. And so what you can do is you can sort of do your standard pipeline parallel for the parts that are serially dependent. But anytime you have to do these computations just for updating the parameters, you can sort of reschedule them wherever. And so the key idea is when you start with sort of a nice, what's called one F1B pipeline, this is a nice optimize, reducing the bubble size schedule. And then you can take this and what you can do is you can separate, you know, this b, which is this computation of the backwards part, and then which is the computation necessary to compute the gradients of the weights.
-
-说话人 1 54:00 
+说话人 1 54:00
 And now I can do the computation of the weights, the WS where I would have originally had a bubble, right? So the parts where, you know, I originally had these white sort of idle utilization components, I can now fill them in with these WS, right? And so by thinking carefully about what the serial dependencies actually are, you know, I can now have something really nice where I'm getting actually good utilization out of my GPUs.
-
-说话人 1 54:24 
+说话人 1 54:24
 To be clear, this is horrendously complicated, right? Like if you actually want to implement pipeline parallel in this way, you're gonna have to like intervene in how, you know, your auto diff is actually calculating these things. You have to have a queue that can track where things go.
-
-说话人 1 54:43 
+说话人 1 54:43
 I heard a funny anecdote in a conversation recently from someone in a frontier lab sort of training LMS. And they said, you know, actually there's two people in the group that understand how the pipeline parallel in our infra works.
-
-说话人 1 54:55 
+说话人 1 54:55
 One person left. And so there's a single load bearing person in our training infra, you know, like. There are stories like this pipeline parallel is infrastructurally very complicated, right? It looks simple here. If you're interested to try and implement it, it does get pretty hairy pretty fast. And I think that's a good note on which to switch to the other kind of model parallelism because this is much simpler and this is often, you know, very cleanly utilized by a lot of frameworks and a lot of sort of even people training really big models rely very heavily or primarily on this kind of model parallelism.
-
-说话人 1 55:32 
+说话人 1 55:32
 So what other way can we split up a model, right? So if we think about it, most of what we do is matrix multiplies, right? In a big model, most of the computation is matrix multiplies, most of the parameters or matrix multiplies or matrices. And so what can we do? Well, if we can parallelize just the map moles, that would be pretty good. And so tensor parallel is this idea that we can take a big matrix, multiply and split it up into a set of sub matrices that can be multiplied, right? So if I have, you know, this matrix multiply at the top right, we have x and sort of X times a equals y. You know what I can do instead is I can cut up a into half, right? And then I can also cut up x into half. And I can compute the sub matrices, I can sum them up, and then I will get my answer at the end. Right? So conceptually, pipeline parallel is cutting along the depth dimension, like the layers tensor parallel, which is what this is cutting up along the width dimension of your matrix multiplies. And so we're gonna decompose into some matrices and then do partial sums.
-
-说话人 1 56:37 
+说话人 1 56:37
 So here's an example of what it might look like in an MLP, right? We have each GPU handling a different sub matrix of, let's say, a big MLP matrix multiply. And then we're gonna have collective communications to synchronize the activations as we kind of need them, right?
-
-说话人 1 56:56 
+说话人 1 56:56
 So what are we going to do? So this is a MLP and sort of the top half and the bottom half, there's two different paths. These are, you know, splitting up the matrices. So I want to do this operation, y equals w x times a. I'm going to split up my matrix a into a 1 and A 2. And then on the right hand side, I want to compute drop out y, b, right? And then I want to return the result as Z.
-
-说话人 1 57:20 
+说话人 1 57:20
 So I'm gonna also cut up B, right? So I've cut up both of my big parameter matrices into two parts, a and B. And in the forward pass, what I'm going to do is I'm going to take my inputs x, and I'm just going to copy them twice, right? So each GPU is going to get the same inputs and they're going to operate on it with a 1 and a 2, right? They have the same kind of, oh, sorry, they're the same row dimension. So that's going to be fine operating on them. So XA1 and XA2 is going to give you some activations. Y1 and Y2, those are going to go into B1 and B2.
-
-说话人 1 57:51 
+说话人 1 57:51
 And then I'm going to do an all reduce to sum them up. That's exactly the figure I showed you before, right? So you copy and then you all reduce and you get the answer Z in the backwards pass.
-
-说话人 1 58:01 
+说话人 1 58:01
 Now it's actually the reverse as sort of the gradients come backwards. In the backward steps, this G is going to be the identity. So I'm going to copy sort of the derivatives on both sides. I'm going to do sort of the backwards operation all the way through. And once I get to f, this isn't all reduced, right? Because I've got sort of two derivatives sort of coming in from both paths. And then I sum them back up, right?
-
-说话人 1 58:22 
+说话人 1 58:22
 So this FNG are synchronization barriers in the forward pass, I do a single all reduce. On the backwards pass, I do a single all reduce just at two different places in the computation graph. So now you can hopefully see how this is a very nice way of wherever you have a matrix multiply, you can just cut up the matrix multiply and sort of paralyze them across different devices. Okay. And as you might imagine, this is actually somewhat expensive. We have a synchronization barrier that lives kind of per layer. It needs to communicate an activation, sort of like the residual activation worth of stuff twice in a forward, backward path. And so tensor parallel, this very simple idea is going to require very high speed interconnects. And so there's a rule thumb. It's a very simple rule thumb to remember, which is that tensor parallel is applied within divide or within a single node, right? So a single box of, let's say, Nvidia GPUs is gonna ship with eight different GPUs that live in that same box, right? And as I showed you at the sort of beginning of lecture today, they're very high speed connected, right? So those eight GPUs can talk to each other very quickly. And so it makes sense to use something like tensor parallel that's very bandwidth hungry on between those eight devices. So what we will typically see is that tensor parallel is applied up to AGPUs where the AGPUs live in the same machine because that gives you the least sort of drop in performance. And so this is an example from Hugging Faces sort of paralyzation tutorial, showing you sort of the throughput decreases of different levels of cancer parallelism. You see that there are. Hits, right, 10 and 12% hits to throughput as you do tensor parallelism.
-
-说话人 1 01:00:05 
+说话人 1 01:00:05
 But up until 8, well, maybe this is manageable. This is kind of the price you pay for just being able to paralyze more nicely. But then you go to 16 devices and you get this like kind of astounding 42% drop in performance. You go to 32 and you see another sort of 65% drop in throughput, right? And so you see, hopefully visually here that you really want to stop at 8 pretense apparels. And that's really the sweet spot because of the kinds of hardware interconnects you can get your hands on. Okay.
-
-说话人 1 01:00:34 
+说话人 1 01:00:34
 So how do things now compare to pipeline parallel, right? Well, compared to pipeline parallel, we don't really have to deal with this bubble thing that we had before. We don't need to consume sort of larger batch sizes in order to reduce the bubble, which is nice. And there's very relatively, I wouldn't say very, there's relatively low complexity in applying tensor parallel, right? All you really need to know about are where are the big matrix multiplies? Can I split them up and make them live on different devices, right?
-
-说话人 1 01:01:00 
+说话人 1 01:01:00
 The forwards and backwards operations still remain the same, right? Compared to implementing something like zero overhead or dual pipe pipeline parallel, you're gonna be in much better shape doing this. So the con is that it's a much larger communication overhead. You've got, you know, in pipeline parallel batch size time, sequence length time, sort of residual dimension point to point communications. For microbatch in tensor parallel, you've got, you know, eight times that per layer and you've got all reduced communication. It's potentially a very large amount of communication that needs to be done.
-
-说话人 1 01:01:35 
+说话人 1 01:01:35
 So, you know, the rule of thumb, as I said before, is tensor parallel is used whenever you have low latency, high bandwidth interconnects. You're gonna see, you know, 2 to like 16, depending on, you know, what kinds of machines you have of tensor parallel out in the wild. And I'll show you examples as I talk through at the very end here of examples of tensor parallel. Okay. Any questions on pipeline or tensor parallel before we move on to the kind of third time like sequence parallel and activation sharding. Yes. Are you.
-
-说话人 2 01:02:08 
+说话人 2 01:02:08
 Can they both be used simultaneously?
-
-说话人 1 01:02:11 
+说话人 1 01:02:11
 Yeah, so the question was, can they be used simultaneously? The answer is that, yeah, you do use them both. So I think we'll get to examples later, but I think the typical thing that you see is you for large scale runs, you very often see tensor parallel pipeline parallel is often used on top of that. I think the only example I know of that does pipeline but not tensor parallel would be deep C v 3 as far as I know.
-
-说话人 2 01:02:38 
+说话人 2 01:02:38
 So within a single. And I guess you have like, so like if you have like five different machines, you have like maybe the first 20% of the parameters are across the. And then that pipeline parallels into the second machine will be.
-
-说话人 1 01:02:53 
+说话人 1 01:02:53
 That's that. Yeah, so the question was there, do you do tensor parallel within machine and like pipeline parallel across machine, for example? Yeah, so you would do something like tensor parallel within machine and a combination of data and pipeline parallel across machines, for example, right? And I'll show you the rule thumb later, but basically you do pipeline parallel because your models won't fit. Like if you could fit your entire model, you just do data parallel plus tensor parallel or, you know, just maybe even data parallel. Okay, excellent.
-
-说话人 1 01:03:23 
+说话人 1 01:03:23
 So then, you know, we've been talking about memory and memory is, you know, in some sense, a very important part of parallelization because we're going to be training big models. And so, you know, when you look at your memory, you realize that actually activations are really big part of your memory usage. So if you look at, you know, standard kind of forward backward pass, I think this was from one of the Pytorch tutorials. You see that memory usage is very dynamic, right? So I'll just talk through this because I think it's an interesting plot in general, right? You always have your parameters as your training, right? Cuz that's static. But you know, in iteration 0, you don't still have optimizer state at all. So actually, you don't have that part of your memory use. But as you do, you know, your forward and backwards, you see activation grows as, you know, accumulate all the activations. And as you start your backwards pass, right, your activation goes down because you're freeing it as you use up your activations and then you're accumulating your gradients. So your gradient memory usage goes up and the peak is actually somewhere, you know, partially through your backwards pass where you haven't freed all your activations yet and you're still building up your gradients. And so in iteration 2, you kind of see the same thing here, right? And so, you know, the point of this diagram is to say, well, we've thought about all the other pieces. We thought about the parameters, we've thought about optimizer state, we've thought about, you know, the gradients, but we have not thought about very deeply, at least the activations. And so let's do that, right? So the final complexity that I want to talk you through is the activation memory. So tensor and pipeline parallel can linearly reduce, you know, basically most things, but it can't actually reduce all of the.
-
-说话人 1 01:05:00 
+说话人 1 01:05:00
 Activation memory usage. And so this is an example from one of the Nvidia papers that's talking about, you know, how do you reduce activation memory. And I think one thing that's really interesting to see is that you make your models bigger and bigger. So from left to right, you see that, you know, a parameter and optimizer state memory can remain the same if we paralyze aggressively, but activation memory just kind of continues to grow because some parts of it don't paralyze very cleanly. So no matter the number of devices you have, actually you can't really get rid of the growth of activation memory per device, and I'll show you why in a moment here. Whereas I think if you do some slightly more clever things like recomputation, you can keep the activation memory low. And that's really key to paralyzing some of the biggest models.
-
-说话人 1 01:05:45 
+说话人 1 01:05:45
 Okay, so what's the activation memory per layer? You've kind of done some of this, you know, transformer math and calculus before. So hopefully you're now familiar with all of this.
-
-说话人 1 01:05:57 
+说话人 1 01:05:57
 But we can compute what's the amount of activation memory we need per layer. And there's a handy formula here. And this is the amount of memory you need. It's SBH times 34+5 as over H. And some of these numbers are mystifying, but actually they're not so mystifying. You know, you can very much see that there's a left term and then there's a right term. The left term comes from, you know, the MLP and like other point wise operations, that's where SBH times 34 comes from. These depend on the size of your residual stream, right? The h on the right side, you have a term that's actually, if you multiply this out as squared B, right? Because the H is cancelled, that's the memory that you need for the Softmax term and other sort of, you know, quadratic terms in your attention, right? Of course, if you use flash attention, you can drastically reduce and use recomputation. We know that we can drastically reduce that second term.
-
-说话人 1 01:06:52 
+说话人 1 01:06:52
 So then let's say we do tensor parallel, right? We do tensor parallel everywhere we can. So we do it in the MLPs, we do it in the KQ computations, in the attention computation, we will end up with something that looks like this. And this is looking pretty good, but not quite there. So activation memory per layer divided by t, which is the number of sort of devices that we're cancer paralleling over, right? So if we're dividing by 8, right, ideally we would divide all the activation memory by 8. But you see there's a straggler term, SVH times 10, that has not been sort of reduced down. And, you know, if you think about what these are the non map mole components. So the layer norm, the dropouts, the inputs to the attention and the MLP, right? All of these terms will unfortunately continue to grow with size and they will not be paralyzed very nicely, right? And so the very last thing that we need to think about is to take those simple point wise operations, which thus far we have not parallelized and we just need to split them up, right? And there's a very simple way to split them up, which is to say, well, if we're doing like a layer norm, right, these layer norms across different positions in the sequence do not interact at all with each other, right? Like they just don't care about anything else. And so what we are going to do is, let's say we have a 10,24 long sequence, we're going to cut that up. And then each device will handle a different part of that layer norm or a different part of that dropout, right? This point wise operations can now be completely split up across the sequence dimension. And because, you know, now we're cutting things up across the sequence dimension, we're going to have to do some synchronization to make sure, you know, the parallel computations that we did can get aggregated back again. And so in the forward past, these GS, they're gonna be all gathers and G bars are gonna be reduced scatters. And in the backwards pass, the two are reversed. In some sense, there's sort of a duality here between the two. And what we're doing here is, you know, for the layer norm, we've kind of scattered things around. And so we're going to have to gather them back together so that we can do sort of our standard computation. And then now whenever we get to the dropout, we want to scatter them back out into the sort of parallel components that we have. And in the backwards pass, we're kind of doing that in the reverse, right? Okay, so hopefully that is clear.
-
-说话人 1 01:09:13 
+说话人 1 01:09:13
 This is a very simple idea, right? We're just paralyzing sort of the very last components that we failed to paralyze before. And so now we can sort of put all of these different pieces together and sort of get to sort of the end, which is we started up here, which is no parallels at all. We did tensor parallel, which allows us to divide everything that's not a point wise op by t. And then if we apply, you know, the sequence parallelism idea, we can divide this component by t once more. And then, you know, we can do things like activation, recomputation, which is, you know, the flash attention trick to remove the second term and the minimal memory that you can kind of easily get away with is going to be this thing on the bottom, which is SB 8 H 34 over t. And this is often used if you're looking at different formulas for transformer arithmetic on like. Like how much activation memory do I use? You know, you often see something like SPH34. And then if you have t tensor parallel divide by t, because this is the sort of easy minimum that you can get for that kind of a memory. Okay. Any questions on sequence parallel and activations? Yes.
-
-说话人 2 01:10:18 
+说话人 2 01:10:18
 I was wondering as the interest launch I started of each other, I suppose a combinational graph grow more and more like follow through learning academic and pipe portion combinational graph as like a tag, right? I would never become all the negative communication between the GPUs.
-
-说话人 1 01:10:34 
+说话人 1 01:10:34
 You're saying if we have something that's a more complicated computation graph than like a single linear chain, will that become a problem? It's a good question. I haven't thought about that. I would guess not like at least for tensor parallel, this operates purely layer wise. It doesn't really care about the dependencies. Maybe for pipeline parallel, there's opportunities for increased paralyzation if there's more than one branch. But I'm not too sure this boy.
-
-说话人 2 01:10:59 
+说话人 2 01:10:59
 Because like you should be like a linear here, right?
-
-说话人 1 01:11:07 
+说话人 1 01:11:07
 Yes, right. Okay, cool. All right. So there's a few other parallelism strategies that I'm not gonna talk about just because in the interest of sort of time and sort of fatiguing you, because I think I've already dragged you through a whole bunch of low level details about how to do paralyzation. So the first one I want to talk about is context parallel or ring attention. You may have heard the term ring attention before. This is a way of essentially splitting up both the computation and the activation cost of computing really large attention, where essentially you're just gonna pass keys and values around different machines. So each machine is responsible for a different query and then keys and values are gonna sort of travel from machine to machine in a sort of ring like fashion in order to compute your KQV inner products. And the cool thing here is you already kind of know how to do this because you've done the tiling for flash attention. So you know that the, so you know that attention can be computed in this kind of online tile by tile way. And that's kind of what's happening in your ring attention.
-
-说话人 1 01:12:14 
+说话人 1 01:12:14
 The other thing which now that you know tensor parallel is pretty straightforward is expert parallelism, right? Expert parallelism, you can kind of think of as almost like tensor parallel in the sense that you're splitting up, you know, one big MLP into smaller expert MLPs, let's say, and then scattering them across different machines. The key difference with expert parallelism is that the experts are sparsely activated. And so you have to think a little bit about routing. And the routing is not going to be sort of as predictable, let's say, as the all to all communication that we had before, intensive parallel, because now, you know, maybe one expert is overloaded. Your networking is going to be a little bit more complicated. But otherwise, conceptually, you're living in kind of the same world as tensor apparel for expert parallelism.
-
-说话人 1 01:12:59 
+说话人 1 01:12:59
 Okay, so just to recap all the things we talked about, I've made a little small table of the different kinds of strategies that we have. You know, we have DDP and 0,1. This is kind of the naive data parallelism thing that you do here. You have some overhead per batch. You have no memory scaling, reasonable bandwidth properties, but you consume batch size. In order to be able to do this right, you need big batch sizes to have big data. I wasn't. You have FSDP, which is kind of like a nicer version of 0,1 in the sense that you can get memory scaling, but you're going to pay an overhead across sort of different layers, right? And so now you've got higher communication cost and you've got potentially synchronization barriers that lead to core utilization. Pipeline parallel, you know, is nice in that, you know, we no longer have this dependence on this per batch aspects, but, and we can get linear memory scaling, but we have sort of another issue, which is this also consumes batch size and it's horrendous to sort of setup and use. And so a lot of people like to avoid pipeline parallelism if it's possible.
-
-说话人 1 01:14:08 
+说话人 1 01:14:08
 And finally, tensor parallelism is very high cost in terms of bandwidth and the amount of synchronization you need to do. But this has this really nice property that has no impact on batch sizes. So it's like kind of the one parallelism strategy you can use that has no cost in terms of your global batch size, which is nice, right? So we have to balance a number of limited resources, right? We have memory, which is one resource. We have bandwidth and compute, which is another resource. And then we have batch size, which is kind of an unconventional resource, but one that you should really think of as a limited thing that you can spend. And on different aspects of these to improve your efficiency.
-
-说话人 1 01:14:46 
+说话人 1 01:14:46
 And there's a very nice TPU parallelism or TPU book, let's call it, from Google that I refer to last week. But also actually they have a really nice parallelism section and they have this great figure that I wanted to show you. You before I moved on to some of the examples. So the key quantity, as I was saying before, is the batch size. And depending on, you know, the ratio of batch size to the number of GPUs you have, different kinds of parallelism become optimal. And so they use sort of certain formula on how much communication and computation you end up doing sort of for each of these models.
-
-说话人 1 01:15:22 
+说话人 1 01:15:22
 So this is a simplified formula to sort of generate this plot. And you can kind of see if your batch size is too small, you have lots of GPUs and really, you know, tiny batch sizes, then there is no way for you to be efficient, right? You're always communication bound, which is this bottom half here. And in fact, you're spending most of your time on communication. As you sort of get more and more batch size, eventually you can get to a point where if you mix both FSDP, so 0 stage 3 and MP, which in this case is tensor parallel, you can actually get basically to a place where your compute bound. So now you're not, you know, spending sort of wasting your flops waiting for communication. And then finally, you know, if you get to a point where your batsizes are big, then you can just get away with pure data parallel, like pure FSDP is gonna get you into a regime where, you know, the time you spend doing computation is higher than the time you spend doing communication, right? So if your batch size is big enough, you can just get away with FSDP, right?
-
-说话人 1 01:16:23 
+说话人 1 01:16:23
 So this is kind of a cool illustration of this idea of, you know, why would you mix these? When would you mix these? Why is batch size of resource? Hopefully this kind of shows you in a very visual way what this is. Okay. And so when you put these all together, you end up with what people call 3D or 4D parallelism. I think I've heard the term 5D parallelism recently. I wasn't quite sure what the 5th dimension was yet. I'll have to read up on that. But now you can put it all together, right? The different dimensions of parallelism. And this is a really simple rule thumb. I originally sort of looked it up and put this together last year, but turns out it's still the same this year. So you can sort of follow this now. So the first thing you have to do is you have to fit your model and your activations in memory, right? If you don't do that, you just cannot train. So this is a requirement, right? So until your model fits in memory, we have to split up our model. So we're going to do tensor parallelism. And we know that up to the number of GPUs per machine, that's very efficient, that's very fast. So we're gonna do tensor parallel up to that point.
-
-说话人 1 01:17:23 
+说话人 1 01:17:23
 Now, after that, depending on things like your desire to deal with pipeline parallel and or your bandwidth constraints, you're either going to use 0,3 or pipeline parallel across the machines, right, until you can fit your model in memory.
-
-说话人 1 01:17:38 
+说话人 1 01:17:38
 Now after that point, well, until you sort of run out of GPUs, you can now run the whole thing and your only goal is to increase the amount of total flops that you have on hand. So you're gonna scale the rest of the way with data parallel because data parallel is, it works well on low bandwidth communication channels and it is very simple, right? And so that's gonna give you a way of sort of using all of your GPUs.
-
-说话人 1 01:18:03 
+说话人 1 01:18:03
 Now, if your batch size is really small, then there is a way of trading batch sizes for better communication efficiency. Like if you haven't consumed all of your batch sizes of resource, what you can do is you can use gradient accumulation on your devices, right? And that will let you basically have effectively larger batch sizes, even if your memory constraint, and that will let you trade your batch size for better communication efficiency since you're synchronizing less often across machines.
-
-说话人 1 01:18:32 
+说话人 1 01:18:32
 Okay, simple rule thumb. This will let you train models with reasonable efficiency no matter what you're doing. And so to sort of make this concrete, I'll talk through a few examples at the very end here, a flash through both this really lovely paper back in 2021 from Megatron LM, basically showing you exactly these things in pictures and also a lot of abrasions as well as some of the models from last year. So this is a big table of how they train models going from 1.7 billion parameters to 1 trillion parameters. And they get great utilization on all of these, right? You see percentage of theoretical peak flops that they get, and it ranges from 40 to 52%.
-
-说话人 1 01:19:14 
+说话人 1 01:19:14
 It's pretty good, right? And so you can see tensor parallel starts at 1 and then they eventually go up to 8 and then it caps out at 8, right? And so they are using tensor parallelism first and then pipeline parallel stays at 1. But once the models get big enough, you know, they can't fit these big models. So pipeline parallel has to increase in order to kind of, in order to compensate. And then the data parallel size basically starts out as big as possible and then slowly kind of goes down, right? Because you know, as we increase the amount of pipeline parallel, this is now consuming in some sense the batch sizes. And so you can't have effectively as big of a batch size if they're being used in some sense for pipeline parallel. Okay, so. Careful 3D parallelism is going to give you sort of linear gains in aggregate flops. So you see, if you do careful 3D parallelism, you see sort of very flat overall achieved flops per GPU, which is giving you, you know, if you add more GPUs, linear scaling in the total aggregate throughput, that's great.
-
-说话人 1 01:20:21 
+说话人 1 01:20:21
 Tensor parallel 8 is often optimal. You see this is the pipeline parallel size and the tensor parallel size you see going to 8,8 with the batch size of 30 or it's like batch size of 128 is optimal. Even if you have a smaller batch size, you know, tensor parallel size of 8 remains optimal. And activation recomputation enables larger batch sizes. And remember that, you know, larger batches can in turn help you sort of mask overhead for pipeline parallel. So activation, recomputation, even though it's more flops can pay for itself, right? We've seen that story play out already in flash attention. Alright, so the last part of this is recent language models, like what do they do? So, you know, I've gone through a few papers to look at examples of what people's paralyzation strategy is.
-
-说话人 1 01:21:10 
+说话人 1 01:21:10
 Omo. In the DOMA paper, they do FSDP for 7 billion parameter model deep seek, the first paper, the zero stage 1 with tensor sequence and pipeline parallel. This is, you know, the vanilla thing that I told you. V 3 actually does something slightly different. They do 16 way pipeline parallel, 64 way expert parallel, which is kind of like tensor parallel. And then zero stage 1 for their data parallelism strategy E, which is another Chinese model, does once again zero stage 1 tensor and pipeline parallel and E lightning, because they're doing Moes replaces tensor parallels and with expert parallelism.
-
-说话人 1 01:21:50 
+说话人 1 01:21:50
 The final thing, if you're interested in kind of state of the art, you know, distributed training with lots of details. Llama Three's report is actually really interesting to read. They have a lot of detail about how they do their networking, what sort of things happen. And you see sort of once again, the kinds of things I said before. You see a tensor parallel of 8, you see CP or this is context parallel. This is only relevant for long context training, which is this very last step. So you can ignore that you got pipeline parallel and data parallel happening in these sort of first two phases. You can also even ignore the first stage here because that's kind of the small batch size training that they did in order to be stable. And if you look at kind of their rationale for how they do their parallelism strategy, you see exactly what I had said before of basically, all right, you want to do TP, CP pipeline, parallel and DP in that order in terms of the amount of bandwidth that you need where data parallel can tolerate these like long network latencies because you can do the sort of asynchronous fetching of sharded model weights, right? And so they're using kind of a strategy that I told you in order to train some of the biggest models.
-
-说话人 1 01:22:58 
+说话人 1 01:22:58
 The funny side note about Lama 3, and you may have heard this sort of in sort of not rumors, but sort of casual conversation with your friends. Is, you know, there's lots of GPU failures when you train models at a huge scale, right? They had 148 interruptions from faulty GPUs totaling about 30% of the total interruptions that they had. Things like, you know, unplanned maintenance of machines. And that was 32 different things, you know, 32 instances of interruptions for their training. And so when you're training a model this big, you know, I've talked about the algorithms, but you also need kind of fault tolerant architectures to be able to deal with these kinds of things. And I've also heard, you know, various stories of people saying the even scarier thing is not actually explicit model failures, but actually data corruption. Like GPUs can silently fail on you and give you garbage data completely ruining your run.
-
-说话人 1 01:23:49 
+说话人 1 01:23:49
 Okay, and then the last one example is for gamma 2. And I wanted to end on this because this is a TPU example. You know, they do 0,3, which is roughly FSDP, and then they do model parallelism and data parallelism, right? And so here, you know, as I said before, the sort of TPUs allows them to sort of stretch model parallelism a little bit further. Okay, so putting it all together, scaling beyond a certain points going to require sort of multi GPU, multi node parallelism. There's no single solution, right? So you want to combine all three approaches to sort of leverage strength. And then there's simple and interpretable rules of thumb for how you might execute this parallelism in practice. Right. Thank you.
-

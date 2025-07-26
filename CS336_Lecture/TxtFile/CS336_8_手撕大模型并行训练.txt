@@ -1,348 +1,232 @@
 2025年7月14日 下午 10:14|1小时 14分钟 55秒
-
 关键词:
 different datas、different ranks、different hardware、bit different、different GPUs、different layers、different tensor、different nodes、same rank、same time、different ways、same thing、big difference、different processes、different types、different components、different values、different pieces
-
 文字记录:
 说话人 1 00:00 
 But last week, we talked about parallelism within a single GPU. And this week we're talking about parallelism across multiple GPUs. So this is a picture you should have in your head.
-
-说话人 1 00:11 
+说话人 1 00:11
 So we have a bunch of nodes. These are basically, you know, computers that have each have a number of GPUs, usually eight. And within each GPU, there's a bunch of streaming multi processors or SMS and which actually do the work. And you see that in green here are essentially the memory and the communication. So within each SM, you have an very small L1 cache with on a GPU, you have high bandwidth memory, HPM, which is bigger. And then you have these links that connect the different GPUs. So the way to think about it is that compute has to happen within the SM on these ALs, right? And a compute needs inputs and needs to write outputs. And generally the inputs and outputs are can be relatively far. If you're lucky, they're on the L1 cache. If you're say less unlucky, they're in HPM.
-
-说话人 1 01:09 
+说话人 1 01:09
 And now this week we're talking about multi GPU and multi node training, where the data that you might need might be across on another GPU, right? So the name of the game is how do you structure all your computation to avoid data transfer bottlenecks? Because we want to remember, keep the arithmetic intensity high. We want to saturate our GPUs, make them go, come along and generally data transfer is gonna be a lot slower. So we have to, that's gonna be the bottleneck.
-
-说话人 1 01:40 
+说话人 1 01:40
 So last week we saw a bunch of different techniques to try to do that within a GPU, including fusion and tiling. So the idea basically is that instead of reading and writing from HPM, you can load into L1 cache or I guess, you know, shared memory, which is using the same type of, you know, you know, has the same speed and just work there on your local scratch pad and then write out to HPM only judiciously.
-
-说话人 1 02:09 
+说话人 1 02:09
 And this week we started looking at communication across GPUs and nodes where we have to replicate and shard our models and parameters and optimizer states. And there, it's the way we do that will determine the cost.
-
-说话人 1 02:26 
+说话人 1 02:26
 So here's a kind of, I'm taking a little bit of liberty to put everything in kind of one hierarchy. You can think from small, fast to big slow. So the smallest and fastest is on a single node, single GPU. You have L1 cache that's extremely fast, but very small. And then you have HPM on a single GPU. And then between GPUs on the same node, we have MV link. And then finally we have, you know, envy switch. And of course, this is all in the end Nvidia ecosystem. So the idea is that many of the core concepts of minimizing data transfer are really the same, but now the mechanics are a bit different because L1 is behaves differently than these kind of envy switches.
-
-说话人 1 03:19 
+说话人 1 03:19
 So this lecture is going to be mostly about concretizing the concepts from the lecture in code. There's gonna be a few new things, but Tatsu did an excellent job of giving you an overview of all the different types of parallelism. I'm gonna try to anchor it in the code so we can more deeply understand what's going on. And then we're gonna have, I'm gonna refer to this standard out file here, which is the output of running this lecture. There were some minor issues I'll spare you of where if you have multi processing, then this framework doesn't quite work.
-
-说话人 1 03:57 
+说话人 1 03:57
 Okay, so this lecture has two parts 1 and part 1, we're going to look at the building blocks, a collective operations, which we discussed last time, how this is implemented in nickel and Pytorch. And then we're gonna do some benchmarking. And then in Part 2, we're gonna look at actually distributed training, data tensor and pipeline parallelism.
-
-说话人 1 04:20 
+说话人 1 04:20
 Okay, so let's start with collective operations. So collection operations are these primitives that are used generally for distributed programming. And collective means that you have, you know, many nodes. These are actually quite old from the, at least the 80s and the parallel programming literature. And generally they provide better abstraction than trying to manage the point to point communication yourself. So these are really tried and true, you know, primitives that have stood the test of time.
-
-说话人 1 04:56 
+说话人 1 04:56
 So a bit of a terminology, so world size refers essentially. The number of devices, for example, four and the rank sort of confusingly, if you're used to kind of linear algebra, is actually just refers to a device. So we have rank 0, rank 1, rank 2 and rank 3 if you have four devices.
-
-说话人 1 05:14 
+说话人 1 05:14
 Okay, so the collective operations are as follows. So starting from, you know, broadcast, the idea is you have T 0 on one of the ranks and you just wanna put it on all the other ranks or all ranks. Okay, so that's very straightforward.
-
-说话人 1 05:34 
+说话人 1 05:34
 Scatter is similar, but you have 4 values and you want to put each of the values are at different ranks. So each of the ranks get different values, not the same value.
-
-说话人 1 05:47 
+说话人 1 05:47
 Gather is the sort of the inverse of scatter, where you have each rank having a different value and then you bring them all together on to one rank. You know, reduce is the same as gather except for instead of concatenating, you add them all.
-
-说话人 1 06:05 
+说话人 1 06:05
 Gather is the same as gather, except for you just do it for all the destinations. Gather was just rank 0 or, you know, rank 1 or rank 2 or any individual rank. All gather as you do it for all of them. And then finally, we do scatter. I can find a good picture of this. So I'm reusing the one from last time is like reduce where you take a bunch of different values and you, you know, add them or perform other commutative operation on them and put it on one rank. But like scatter, you're going to be putting different pieces of the vector or tensor on different ranks. Okay, and remember that all reduce is equivalent to reduce plus all gather.
-
-说话人 1 07:05 
+说话人 1 07:05
 So the way to remember this terminology is as follows, because it can get kind of confusing, like which ones all gather, which ones reduce scatter is that reduce just means you're performing some, you know, associative and commutative operation like some or minimum max or average. Broadcast scatter is the inverse of gather and all just means all a destination is all, you know, devices. Okay, so totally this is a review from last time. So, okay, any questions before I move on? Since we're gonna build on these primitives, so it's useful, everyone understands.
-
-说话人 1 07:58 
+说话人 1 07:58
 Okay, so now let's see how this is actually implemented in starting with a hardware. Okay, so here's a classically what you know, hardware for GPUs looks like. So this is kind of in the home. You have a computer, I guess, and you have your CPUs and generally you have your GPUs on Onenote that communicate via PCI E bus. And if you have to go connect, communicate between different nodes, then this is all connected to Ethernet. So this is kind of typically how, you know, machines were built. If you buy a GPU and you're for, you know, gaming or something, this is kind of probably what your setup looks like.
-
-说话人 1 08:50 
+说话人 1 08:50
 As we'll see, this is kind of suboptimal because there's a lot of overhead when the data gets, needs to get shipped from GPU to GPU. It has to go through, you know, the kernel get copied into buffers and then go through this kind of a, you know, transport over Ethernet. And that introduces a lot of overhead.
-
-说话人 1 09:11 
+说话人 1 09:11
 So what has happened in modern times with scientific computing and, you know, deep learning is that if you know that you're gonna just string a bunch of GPUs together and do something together, then we're just going to hook the GPUs up, you know, directly, basically.
-
-说话人 1 09:30 
+说话人 1 09:30
 So in the Nvidia ecosystem, we have NV link that directly connects the GPUs, therefore bypassing the CPU. You don't need to go through kind of the, you know, the kernel of the of the of a host machine. And across even across nodes, we can connect the GPUs directly via MV switch. So therefore we're bypassing Ethernet. And because Ethernet was developed a long time ago, clearly not for these type of app.
-
-说话人 1 10:00 
+说话人 1 10:00
 Locations. So me switch just and me like kind of skip all that and just optimize directly for the type of workloads that we're interested in. So if you look at H1HUNDREDS, each node has, oh sorry, each GPU has 18 MV deal blinks generation 4 coming out. So that's gives you a total bandwidth of 900 gigabytes. If you compare to these, it's certainly a lot faster than Pcie and it's certainly way faster than, you know, Ethernet. And in comparison, if you think about the cost of just going from the SM to, you know, reading from high bandwidth memory, that's still quite a bit faster by a factor of, you know, four or so. And of course, these numbers are constantly changing with a new black wells. This number is like, you know, of like two or three times more, I believe. Okay.
-
-说话人 2 11:08 
+说话人 2 11:08
 Like the sequence, the CPU and then like to another GPU or it's directly used in the GP.
-
-说话人 1 11:14 
+说话人 1 11:14
 So the question is for the Pcie to where, how does the data get, you know, transferred? I think it has to still go through the CPU. Was there another question? And the Pcie was, I mean, it's developed for, you know, things like other things are connected to it as well, like your sound card or your SSD hard drive. So it's not really, it's sort of like a general purpose, you know, bus for communication of devices.
-
-说话人 2 11:51 
+说话人 2 11:51
 NBA Link also has a connection with CB.
-
-说话人 1 11:55 
+说话人 1 11:55
 Yeah, so a question is, MV Link also connects to the CPU. We're gonna see a bit later how. I think maybe just in the slide, how things are connected. Yeah, so you still need to talk to your CPU, of course. Okay, so there's this command that you can run and this produces some, you know, output which allows you to see how the GPS are actually connected. So I ran this on, you know, our cluster. There is AGPUs. I guess you won't be able to get HPUs, but I guess if you could, this is what it would look like. And you see that between every pair of GPUs, there's MV eighteen, you know, connecting. There's also these kind of network, you know, cards and other things. Okay. So then network cards are basically what gives you the Pcie connection and the CPUs. So, okay, so that's the hardware. So how do you use the hardware? So Nvidia has spent a lot of, you know, time developing really good software on top of their, I guess, really good hardware.
-
-说话人 1 13:15 
+说话人 1 13:15
 And there is a collective communication library by Nvidia called nickel. And this essentially translates the collective operations which we looked at before, like all reduce into low level packets that need to be sent between GPUs. So this library actually does a lot of work because it allows the programmer just to operate that level of, I need this tensor to appear on all the machines and it just happens. Okay. So, you know, just a little bit of what happens is when you configure, set up nickel, you bring up a bunch of, you know, devices and there's some communication that happens to figure out the topology of the hardware. It optimizes the path between the GPUs. And then when you actually call these collective communication operations and then launch Kuda kernels to send and receive data. Okay, so that's nickel. It's provided as a library, but nickel is still a bit too low level to us because most of what we're doing is, you know, in Python. So there's a Pytorch has this torch distributed library, which essentially provides a clean interface for these collective operations.
-
-说话人 1 14:31 
+说话人 1 14:31
 Now from the comfort of your Pytorch program, you can just write all gather into tensor on a tensor and LPR on all the on different ranks. It also has this nice useful feature that it supports multiple backends for different hardware. So in particular, Nicole, remember, was for GPU, but you can also run collective operations. Remember, this is not GPU specific. It's just for any. Set of, you know, devices. So you can also do it for CPU using this backend called glue. So if you're debugging stuff on your laptop for your assignment, for example, you can use glue and still I'll be able to run things without even a g GPU. So anyway, that's another advantage of having these high level primitives is that they're much more portable than having to, yeah, you know, only having something that's a very GPU specific. Of course, the performance is gonna really depend on the hardware, but at least logically, you can make sure your code runs.
-
-说话人 1 15:39 
+说话人 1 15:39
 Pie distributed also supports other high level things like fsdp, which tattoo talked about last lecture. But we're not gonna use this in this class because in the spirit of developing things from scratch, that's just what we're gonna do.
-
-说话人 1 15:54 
+说话人 1 15:54
 Okay, so let's look at some examples of how Torcha distributed collective operations work. Okay, so there's this utility function I wrote. You can take a look at it in the code if you want, which takes a function and just runs this. Basically, it's a wrapper around Python multi processing where it just runs four processes that execute this function. So when you're in this function, you should think about it as there's actually world size number of processes running this identical function where the rank indexes from 0,1, all the way to world size minus 1.
-
-说话人 1 16:36 
+说话人 1 16:36
 Okay, so right now I'm stepping through just one of the ranks because lectures are not parallel. And so generally what you do is you, the first thing the process needs to initialize itself and you essentially s they need to kind of find each other, right? Because your multi processor and running a lot of processes, they need to connect to a single host so that they can, you know, figure, know that each other exist. So know that this is not where all of the data goes through nickel, but this is just for kind of coordination. And since we have a GPU, we can use nickel. Otherwise you would use clue.
-
-说话人 1 17:26 
+说话人 1 17:26
 Okay, so after you set up, so now we're gonna do some stuff. There's this useful function called a barrier, which basically waits for all the processes in your process group to get to this point, right? Remember, everything is running asynchronously and in some cases you just want to have a synchronization point. So barrier does that. The reason I put it here is actually sort of for trivial reasons because I want all these print statements to kind of be grouped together. But there's other reasons why you might want to use barrier as we'll get to later. So I'm going to, for each of these groups, construct a tensor. So the tensor is 0,1,2,lus, you know, the rank. So I'm gonna print out for each rank before it all reduce. What does it look like? Okay, so here's what it looks like. Can people read that in the back? Yes. Okay, good. All right. So on rank 0 is 0,1,2,3, rank 1,1,2,3,4, and so on. And notice that because it's async, the orders, it's just out of order in whatever order it happens to print.
-
-说话人 1 18:41 
+说话人 1 18:41
 Okay, so each rank has a different tensor and then you all reduce. So all reduce, you pass in that tensor, you say, I want to sum it. In this case, I'm not going to do async, but you can do async to, which is useful for overlapping communication and computation. And then, you know, afterwards, what happens after all reduce as advertised, basically for the first component, you add them up, you get 6, this you get 10,14, and 18. Okay, so after all reduce the basically this tensor gets overridden with the corresponding sum. So it's very kind of, you know, nice and simple to use.
-
-说话人 1 19:35 
+说话人 1 19:35
 Okay, so let's do reduce scatter. So reduce scatter. I'm gonna create an and input, which is has dimension, you know, world size, in which case this is for. And I'm gonna allocate an output because we do scatter is not gonna operate in. Place. This is just gonna be a scalar.
-
-说话人 1 20:02 
+说话人 1 20:02
 So before the video scatter, this is, yeah, what it looks like. I have my, you know, input as before output, you know, happens to be zero. So there could be any value since I didn't initialize it.
-
-说话人 1 20:17 
+说话人 1 20:17
 And then after the reduce scatter, we're passing the input and the output and I'm gonna sum. Then I get. Essentially what happens is that for the first component I sum and that goes on rank 0. For the second component, I sum and it goes on rank 1 and so on. Okay, so as you notice, it is producing the same operation as all reduce except for the output is sort of scattered across all the different ranks.
-
-说话人 1 20:56 
+说话人 1 20:56
 Okay, so now let's do all gather. So I'm going to just directly use the output of reduced scatter, which is this, as the input. And then I'm gonna allocate an empty array for the output. And then, so, so before the all gather the input is this and the output, I guess, are just arbitrary values. And after I do the all gather, you know, what happens is I get the all these tensors to show up in on all the devices. Okay, so this is just a kind of also an example. Hopefully now you're very convinced that reduce scatter plus all gathers just all reduce because I computed exactly the same quantity as I did for all reduce.
-
-说话人 1 22:05 
+说话人 1 22:05
 Okay, questions is clear?
-
-说话人 2 22:11 
+说话人 2 22:11
 Yeah, in reduce scatter are we keep track of relationship?
-
-说话人 1 22:17 
+说话人 1 22:17
 So the question is, in reduced scatter, do you keep track of which index goes to which GPU? So by convention, the dimensionality has to be then basically the world's, I mean, it could be a general tensor, but one of the dimensions is the world size. And it just, you know, infers that basically what you wanna do is the output is the, let's say the, sorry, the input has to be basically world size and then it knows that basically the corresponding, you know, the computations go to each of the outputs. Yeah, you have to be a bit careful with the making sure the dimensionality aligned. So, you know, going through this, you know, small examples can be helpful.
-
-说话人 1 23:10 
+说话人 1 23:10
 Is there another question? Okay. So finally, we're now in this process that's running. And when you're done, you just clean up. Okay? So far we've talked about these collective operations bit about how they're implement, you know, Pytorch and it's nickel and then Pytorch. Let's do a bit of, you know, benchmarking in the spirit of what we did in assignment or the first lecture, or rather second lecture, we're gonna focus on one node, you know, for now. So let's do all reduce. So I'm going to have this tensor of 100 million elements and a world size of four. Okay, so I'm going to just allocate a tensor and generally, as I think as you hopefully are can appreciate now that when you benchmark, you have to really be careful to kind of clean your palette in some sense. Like you, in this case, I'm gonna warm up basically com, run the operation once and then synchronize and do barrier. Some of this is, I think, probably a bit defensive, but, but just to be safe so that all the kernels get, you know, loaded and whatever needs to be kind of computed gets computed. And then I'm going to start the clock, all reduce and then synchronize again and stop the clock. Okay, so.
-
-说话人 1 25:00 
+说话人 1 25:00
 Now I can look at the, how long that took. Okay, so if I scroll down here, I guess this is not that informed. I should have printed in microseconds probably it was, I guess, very quick, some number of seconds. And now let's measure the bandwidth, which is the number of gigabytes that we're actually transferred in aggregate per second. Okay, so the way we do that is we have to think about what actually gets transferred here. So there's a tensor with that element size and the size of each element is, I guess, this, I think this is float 32 so that we've note 2 I'm sorry 4 bytes and and and so that's the size invites.
-
-说话人 1 25:59 
+说话人 1 25:59
 Okay, so now this is a little bit, you know, subtle. So how many bytes are actually sent or transfer? Sent slash received. So each tensor sitting on a rank has size bytes, okay? And it needs to send it to world size minus 1, you know, other, you know, machines or not, or ranks rather. So there, but there's a factor of two. So why is there a factor of two? Because you're doing an all reduce, remember? So you need to send all the distinct, you know, elements into basically one place. It needs to get summed up and then that needs to go back to everyone. Okay, so a rank needs to kind of send the input out and then receive the output. So that's why there's a factor of two there. And so the total duration is the world size times the actual duration that pass. So I guess we're just kind of assuming that every we're, we're, you know, if there's four processors, that's sort of like four times as much wall clock time that happened. And the bandwidth is just the bite stood over the direction. Okay, so what do we get here is about 277 gigabytes per second. Okay, so, you know, I think for H100 be above, I think I claimed that there was something like 900 gigabytes per second.
-
-说话人 1 27:45 
+说话人 1 27:45
 Now, of course, as we know, your mileage varies depending on the size of the tensors and the exact number of devices and the weather and whatever, not the weather, but your various factors. So you're, your mileage might vary. So it's always good to benchmark to see what is actually the number of gigabytes per second. You're kidding. Okay, so reduce scatter is going to be very similar.
-
-说话人 1 28:15 
+说话人 1 28:15
 So let's just go through this query quickly. So we create it input, which is world size times number of elements. So each rank is going to have this, this the matrix. And and so we're going to warm up and then start the clock, reduce scatter, stop the clock and then see how long it takes. Well, okay, that's not helpful. And then let's look at the bandwidth. So this number of centipes is no a factor of two here because in reduce scatter, remember all you're doing is you're sending, you know, your inputs into, you know, one place. If you just think about reduce, right, all the elements just go into one place and that's it. And scatter just means that different components of your tensor are going to different places, but it's effectively, it's like a, you know, reduce.
-
-说话人 1 29:18 
+说话人 1 29:18
 Okay, so if you do the same calculation, you'll see that it's, I guess I get 70 in this case. So I don't exactly know why it's exactly 70 as opposed to some other number. I guess one could speculate that all reduce generally, there's more traffic that, you know, happens and all reduces are, you know, potentially more optimized. I think that Nvidia hardware has this kind of sharp acceleration that actually does sort of some of these computations in, you know, in the actual network, which just shares us a factor of two, but I don't know if that's completely accounts for. A difference here, there's a lot of stuff that happens in nickel that it's a little bit hard to kind of reason about the performance exactly. Hence benchmarking.
-
-说话人 2 30:14 
+说话人 2 30:14
 Question about the set bytes and urgent data bytes and models calculated. Yeah, specifically it looks like it actually is just like the data. That's a decent as well. But what about like the inputs of the reduction stuff? I'm wondering how this. So the.
-
-说话人 1 30:32 
+说话人 1 30:32
 Question is, it seems like this is just the bytes for the output. And what about the input? So to be clear, I am assuming that the inputs just are already on the device. So I'm not counting that time and just counting what needs to happen to do the reduce scatter.
-
-说话人 2 30:54 
+说话人 2 30:54
 This is just a scatter.
-
-说话人 1 30:57 
+说话人 1 30:57
 This is a reduced scatter.
-
-说话人 2 30:59 
+说话人 2 30:59
 Operation. So you need to reduce your sample.
-
-说话人 1 31:04 
+说话人 1 31:04
 So this function does reduce scatter. So it's one operation.
-
-说话人 2 31:12 
+说话人 2 31:12
 I, I mean, like, you know, we counted twice in the previous platform because we were doing reduction with stop it for hand occupied and more.
-
-说话人 1 31:24 
+说话人 1 31:24
 So you're saying that for all reduce there were there's a 2 x because you needed to reduce and again, you needed to, you know, spread out again for reduce scatter. I mean, I, it's just a name. It's called reduce scatter, but it's really just a reduction.
-
-说话人 1 31:50 
+说话人 1 31:50
 Okay. And you can also see you based on this, that if you do reduce scatter and you do all gather, each of those is, doesn't have the factor of 2. So when you add them up, you get a factor of 2, which is another way to see that all reduces twice.
-
-说话人 1 32:06 
+说话人 1 32:06
 Okay. And there are some references you can go read about how to benchmark and these collective operations. Okay, so let's now talk about the distributed training piece. So our general approach here is gonna be, I'm gonna walk through a bare bones implementation of each strategy on deep MLPs essentially. So recall that you generally are in the regime where the MLPs are the compute bottleneck and transformers, not their attention. So in some ways, even though this is a very simple architecture, it's fairly representative of the type of, you know, workloads that you'll see.
-
-说话人 1 32:51 
+说话人 1 32:51
 Okay, so let's start with a data parallelism. Actually, just one note is that data tensor and pipeline terrorism are, you can just think about them as different ways of cutting up your, your, either your model or your data, which hopefully I'll depict visually here. Okay, so in data parallelism, here's your model, assuming it has 4 layers, each layer of the MLP is just a matrix multiply, where this is the hidden dimension. And so the data is also a matrix, which is there's the batch dimension and then the hidden dimension. And data parallel just cuts along the batch dimension into, you know, be essentially smaller, you know, pieces.
-
-说话人 1 33:41 
+说话人 1 33:41
 Okay, so now each rank is gonna get a different slice of the data. So let's do an example here. So I'm going to generate some sample data. So let's say I have a batch size of 128, hidden dimension of 1,024, and then just generate some random data. Okay, so I have batch size by number of dimension and I'm going to run this data parallel algorithm or DDP.
-
-说话人 1 34:15 
+说话人 1 34:15
 So here I'm going to, so I got past this data. There's a batch size and the dimension as claimed from before. Now I divide the batch size by the world size. So I get the local batch size. That's how many, you know, how big the batch size is on a given rank. And then I'm going to, based on the rank, just figure out which starting and the indices of size, local batch size I need to access and then get the corresponding data from that. So basically I'm just like reaching in and grabbing some subset of the rows based on the rank. Okay.
-
-说话人 1 35:00 
+说话人 1 35:00
 So now I'm setting up the MLP here and this is done very sort of bare bones, you could say. So here I am creating the MLP parameters. So each a layer has essentially a matrix, which is numb demand mentioned by a num dimension. And remember num dimensions 1,024 and I'm gonna create the optimizer. So remember this function is running asynchronously on all the different on each rank. So each of the four ranks is gonna be running this with rank equals 0,1,2,3.
-
-说话人 1 35:41 
+说话人 1 35:41
 And now I'm going to start training. So for a number of steps, I'm going to do a forward pass through the layers matrix multiply non linearity matrix multi non linearity. There's 4 layers here gonna compute some loss. I don't really care what the losses is just made up, something made up. And I'm going to do the backward pass.
-
-说话人 1 36:01 
+说话人 1 36:01
 So far, this just looks like I'm implementing SGD, right? And that's the kind of the point. The only difference is now to implement DDP is that you just like inject this line here, which syncs, synchronizes the gradients across worker. So what you do is for each of the layers, you call it all reduce where you're averaging. And the thing you're averaging is prime dot grab. Okay, so it's just like you've kind of hijacked this someone's SGD code and you're saying, wait, I'm actually gonna just mix all the gradients after the backward pass. And then after you do that, you just update the parameters as usual. So from the SGD perspective, it seems like nothing is happening. I'm just running SGD, but you know, someone has just, you know, mix my gradients. Okay, so I guess just to print out some things. So data parallel, I'm printing at the loss. So one thing to note is that the losses are different between all the different ranks because they have different datas. But after the all reduce all the parameters are, you know, the same. Okay, so this is a crime, your textbook application of all reduced in ML setup.
-
-说话人 1 37:40 
+说话人 1 37:40
 Oh, where each rank runs this through all reviews. How do they ensure that they're all at a sense that marking the same step or maybe it doesn't matter. So the question is, how do you ensure if all of these processes are just running asynchronously, how do you make sure that each of them is actually, for example, on the same step? This is because all reduces is a synchronization point. They'll stop everyone and do the all reduce. So you have to be careful because if one of your, you know, ranks has a missing all reduce, then it'll just, you know, hang and others will be.
-
-说话人 2 38:32 
+说话人 2 38:32
 Oh, why is getting the initial parameters and not the right.
-
-说话人 1 38:36 
+说话人 1 38:36
 The question is, why does getting initial parameters depend on the rank? They're the same. The reason is just because, I guess I don't, the code for this basically puts it on the appropriate GPU. Okay, any other questions?
-
-说话人 1 39:04 
+说话人 1 39:04
 So TTP is something you're implementing assignment to which maybe some of you have, you know, looked at or maybe not. It will be done in a context of a transformer, but this is sort of the most bare bones aversion. So you can see very clearly what's happening.
-
-说话人 1 39:24 
+说话人 1 39:24
 Okay, so that's a DDP losses are different across ranks, but the gradients are reduced to be all the same. So therefore the parameters are of all the ranks are the same, right? So actually you're doing world size number of SGD runs, but because they're synchronized, they're doing the same thing. So you can think about this as sort of an instantiation of, you know, analog of activation, you know, checkpointing, where sometimes you just do extra compute because you don't want to store things. In this case, you know, we could have, for example, a shift optimizer state around, but that would be a bad idea because, you know, it's much faster just to run the to update the optimizer state then to actually move the optimizer parameters amount.
-
-说话人 1 40:19 
+说话人 1 40:19
 Okay, so last year I did try to do FSDP that, but that was a sort of a hair ball. So I'm gonna skip that and do a tensor parallel. So here the picture is we leave the data the same. And now what we're gonna do is we're gonna cut the model along the hidden dimension. Okay, so each rank is going to get every layer, but it's going to get only part of each layer. And what we're gonna end up doing is transfer all the data and the activations around. Okay, so we're generating same sample data. And let's look at tensor parallel. Okay, so I have the batch size and number of dimension as before. And now I'm going to knock. Before I was cutting batch size, but now I'm cutting num dim. So I have local num dim equals 124,1,0,24 divided by world size, and that's 2:56. So each model, essentially us, sorry, each rank gets a part of the model, which is one over the world size fraction of the parameters. Okay, and remember the whole why we're doing parallelism at all is because the model won't be able to fit into a single GPU. So we're going to shard across multiple GPUs. So the parameter matrices are now num them by local num them.
-
-说话人 1 42:09 
+说话人 1 42:09
 And now each rank is going to, I'm only going to implement the forward pass here, not the whole training loop. So I'm gonna start going through all the layers. So I'm gonna compute the activations first. So this looks pretty normal, except for remember the activations are actually batch sized by local num dim rather than numb dim because I own each rank only has a fraction of the activations now. But now once I get the activations, I need to, you know, communicate. And here I what I have to do is I'm going to allocate memory for all the activations. So at this point, every one has a as an X, but that x represents a different part of the activations.
-
-说话人 1 43:08 
+说话人 1 43:08
 Okay, so now I'm going to just allocate batch size. I'm local num dim, but world size number. So basically each rank is going to basically have enough. I'm gonna just to get the, we basically have world size, number of batch size by local num dim, you know, matrices. And then I'm going to do an all gather. Okay, so I'm going to send all the activations. And this, I mean, it's, you know, fairly simple. So X, remember, is batch size times local num dim, but X is different for every rank. So when I do the altogether, I'm going to put it in activations. Which has essentially a world size number of, you know, the same shape as X. Okay, so now every rank has the same activations. Now has the activations of all the models, of the whole model. Okay. And then just like, just to concatenate them together to get, you know, X. Okay, so now X is now again batch size by none of them. Okay, and I, you know, repeat. So as you can see, this is, you know, there's a quite a bit of communication that happens, which is why remember tattoo said that for tensor parallel, you need pretty high interconnects. Otherwise you'll be passing a lot of these activations, you know, around. Okay, and then you do it for the next layer and you get the idea. And just to print out some output. So tensor parallel. Let's see here for pass produces activations of basically the, you know, the full size and everyone has the same activations at hand.
-
-说话人 1 45:28 
+说话人 1 45:28
 Okay, so backward pass, I'm gonna skip because that's kind of a annoying to do. Alright, any questions about that? Yeah, I just wanna remind her. So why is it hard to do the back of ads? I don't think it's necessarily hard, but in, I guess, in the constrained, you know, time and space, it's, it's, I, it's not hard. It's just, you know, requires a bit more work. Okay, so now let's go to pipeline parallelism. So in this case, we're cutting the model by layers. So all the ranks get all the data and all the ranks, each rank gets all of one layer, but they get different layers. Okay, so sample the data and run this program of this function for all the ranks. Okay, so here I'm going to figure out how many layers go in each your rank, which is two here. So I have a 4 layer network. I have two, you know, two ranks. So each rank has two of the layers, just like this picture, actually. And here I'm going to just allocate the parameters just for the layers that I need. Okay, so I'm going to do the forward pass.
-
-说话人 1 47:29 
+说话人 1 47:29
 Remember, there is a further optimization that you can you do, which is, you know, if you just you'll do a naively, you get these pipeline bubbles that tattoo talked about before.
-
-说话人 1 47:44 
+说话人 1 47:44
 One way to sort of mitigate that is to break up the batch into micro batches. So here I'm going to divide this batch into, you know, batches of size 32. So four batches of size 32. And then now the idea is that every rank is going to essentially wait for the previous rank to pass it to the activations. It's going to apply those layers and then it's gonna forward it to the next rank.
-
-说话人 1 48:18 
+说话人 1 48:18
 So starting at the base case, we have rank equal 0. That's just the data. So I'm just chunking the data into a bunch of microbatches and going through each of micro batches. I first I receive the tensor. So I'm using these point to point primitives now instead of the collective primitives. And I essentially, you know, BA basically receive the tensor x and I'm gonna compute the layers that are assigned to this rank. So in this case, there's only. Two of them. And then I'm going to send it to the next rank. And again, sand is a point, you know, operation. And then the next batch, I'm gonna do the same thing. So, okay, so I'm gonna skip that. Okay, so that's basically it.
-
-说话人 1 49:23 
+说话人 1 49:23
 So pipeline in parallel, at least the very naive version of it, is relatively conceptually simple. But it's not to mention last time, there's many things that are missing from this basic implementation. Overlapping the communication and computation is something we're not, you know, doing at all here. For example, receive and send our synchronous, but you should really make them async. And also the order in which you do the forward, actually, this is just the forward event. This is not the backward. But once you have the backward, then you have to figure out how to interleave the forward and the backward steps.
-
-说话人 2 50:07 
+说话人 2 50:07
 Yeah, I guess like maybe what you just mentioned about like the asincome being shown here is some, I guess in actual Alex, like the GP will be sort of leasing, like whether or another one passes something to it. And it's kind of this kind of sort of like it only starts processing everyone's the like the year before it asks today's corresponding side.
-
-说话人 1 50:33 
+说话人 1 50:33
 So the question is this kind of like event driven program and where you're just waiting for things to happen. And I think in event driven programming, you basically write these hampers and then whenever stuff happens, maybe you get a mouse click, maybe you get, you know, a file ready event, then a piece of code runs. That's quite different, I think, from this style of coding where everything has to work in lockstep. It is true that you're sort of waiting for the previous and you rank to send you the information. But at least in this implementation, there's no flexibility of where it's getting from. It's not like it's waiting for arbitrate data come from anywhere. I think there are ways to do asynchronous training, which was, you know, I think quite popular, you know, 10, more than 10 years ago, where there is more event driven, where you have a, you know, server that sends data and whenever the gradients are ready, it just like uploads and then the gradients get accumulated and if workers die, then you know, that's then, you know, that's sort of handle more robustly. But in modern training, despite scaling up quite a bit, you know, everything seems to be kind of in a synchronous paradigm. Yeah, so it is true that when I say the workers are and the ranks are offering asynchronous, that's just because it's different processes, but you're still putting quite rigid synchronization on how everything is working in lockstep.
-
-说话人 2 52:21 
+说话人 2 52:21
 Yeah, how do we change this program to handle it to overlap the concentration?
-
-说话人 1 52:31 
+说话人 1 52:31
 So the question is, how would you change this to overlap communication and computation? So for example, when you send this, there's no reason to just wait for the data to be sent. You just basically fire off the send. Remember that the send actually gets happens on the GPU via some kernel launch. So that's sort of independent and it can just go and process another microbatch, you know, right away. So the way I think you do this is there's another function called I send, which is asynchronous. Actually, this should be a synchronous asynchronous, which returns a handle. And so you basically do all the send and then at the end, you basically wait for all the sense to complete. And then for overlapping the, when you actually have a backward step, then you basically have to, you know, schedule that in here.
-
-说话人 2 53:37 
+说话人 2 53:37
 Yeah, the Anthony for a send and receive a via multiple send, multiple receives. How's it, you know, which one is good?
-
-说话人 1 53:48 
+说话人 1 53:48
 So the question is, if you have multiple sends a multiple receipts, how do you know which is which? So here your space, the tensor name doesn't matter. It's just. Whatever a variable is there and what you're specifying is the source.
-
-说话人 1 54:07 
+说话人 1 54:07
 So if I'm at a node and I'm receiving, then whatever the next message coming from that rank, I'm just going to, you know, put in this X and move, continue executing. I wanna do, if you want to do two sends from the same rank to the same destination, my household.
-
-说话人 2 54:40 
+说话人 2 54:40
 What in which state runs in.
-
-说话人 1 54:44 
+说话人 1 54:44
 So I'm not quite sure about this, but I think if you have two sends, it's sort of put in a stream. So the order of the sends still as preserve. It's just that other stuff can happen at the same time. Like, you know, you can send to like, I think if you have a pair into 2 cents, then that order is preserved. But the order in which, you know, you send some other rank is sending to another rank. It can happen at any time.
-
-说话人 2 55:18 
+说话人 2 55:18
 Yeah, if you just did like this lesson and no one's receiving it, the water just gets off there. Like.
-
-说话人 1 55:25 
+说话人 1 55:25
 So what happens if you send and no ones receive it? I think it would just stop. Let me just wait. Because there's no. Yeah, I mean, I, because I mean, the process could just be running and you don't know whether it'll, it's just, yeah, I mean, just code executing. So you don't know if it's never gonna get there or if it's just gonna be a matter of time. Yeah, so the question is, what happens to the last rank? So at the end, the last rank has all the activation. So that has basically the results of a full forward pass. And then, you know, if you implement the backward pass, then you would be actually now computing the gradient with respect to the loss. And then you would go back down and send to from rank to rank minus 1 and so on.
-
-说话人 1 56:28 
+说话人 1 56:28
 Okay, I guess maybe I was afraid I was gonna run out of time, but looks like I had actually have time maybe next year I should do the backward pass. Okay, so actually I'm gonna finish quite early today, but so if you have any other questions you should ask, so far we've gone through three simple examples of data tensor pipeline parallel.
-
-说话人 1 56:53 
+说话人 1 56:53
 Of course, this is for simple MLPs. You would actually want to do this with your own, you know, fancier model like a transformer. I did argue that at least at the core idea is you can sort of understand through the MLP. I think the, but of course, when you want to train transformer, not a deep MLP, so you still have to implement the full complexity.
-
-说话人 1 57:25 
+说话人 1 57:25
 What's also missing is the communication and computation overlap, which is not really handled very carefully here. And there is generally a more complex code with bookkeeping. I, you know, encourage you to check out like Megatron LM or Pytorches, FSTP. It gets, you know, fairly hairy. And one of the things that I think makes some of the bookkeeping at least for, let's say, FSTP, and you'll be exposed to this in a, a to a bit, is that if you want something that handles arbitrary architectures, then you have to, you know, figure out the parameters and do a book bunch of bookkeeping to and, you know, figure out whether layers are and so on. Whereas in the MLP case, it's just I've sort of made the decision that I'm going to split the model in this in a particular simple way. One other thing I'll just mention as an aside is that all of what we're doing in this course is as Pytorch, but it is useful to be aware of this whole other ecosystem around jacks and TPUs, which is actually kind of nice in some way. And the idea here is jacks has allows you just define the model, it define the sharding strategy and then the Jack's compiler handles the rest. So there's this toolkit that we develop called lavanter based on jacks. And I'll just show you. A snippet of what it happens. So this is FSDP and 10 lines of code. And basically you have a your model and then you just say shard with this particular, I mean, I don't expect you to kind of read this exactly, but basically you define which dimension you're gonna shard by. And then, you know, that's it. And similarly for tensor parallel, you're just saying I'm going to shard the model along the, you know, you can shard by the on the head dimension for attention. And also you can shard based on the model dimension. So in some sense, you know, this gives you a sort of, you know, conceptual simplicity of what you're trying to do is you have this basically computation graph, but it has these kind of dimensions, you know, the mall dimensions, embedding dimension, the attention sequence dimension. And Jax allows you to basically just specify which dimensions you want to cut by and also define a mapping from that onto the actual TPUs. And then the jacks compiler magically just, you know, figures out how to compile that down into the primitives that, you know, shuffle things around. So this is much more higher level than, you know, doing the operating with the collective communication. But you know, we're sticking it with Pytorch because it's it allows you to see kind of underneath the hood what's actually happening. But if you're actually doing this in the real world, obviously you don't need a you and you probably shouldn't implement all of this from scratch.
-
-说话人 1 01:00:59 
+说话人 1 01:00:59
 Okay, so that's the end of the Jack's digression. So just summarize, we've seen many ways to parallelize so far. And each of these ways of parallelizing is you can think about just like splitting either the model or the data along some dimension, either the data, the batch dimension, the width dimension, or the depth dimension, or the context length dimension.
-
-说话人 1 01:01:27 
+说话人 1 01:01:27
 We also see these, this kind of recurring theme of, you know, recomputation. You can kind of recompute something from scratch or you can store in memory and suffer the data transfer cost. Or in now in a multi GPU, multi node setting, you can actually store on another GPU's memory and then, you know, communicate, which is, you know, even slower. So there's kind of these tradeoffs, you know, here. And, you know, often recomputation is actually, you know, can be, you know, better, but obviously you can't, you know, you can't reproduce, you compute the whole thing. And often you're either communication or memory limited.
-
-说话人 1 01:02:19 
-A final word is that it is the case that Harbor is getting better. So you might think that, well, maybe none of this is really necessary because in five years, everything will fit in, you know, L1L HPM. So this is not gonna be the case because those might grow quite a bit, although there are still physical limits, will always be ending up with bigger models that sort of s are at the limit of what the harbor can do. So this hard cocal structure, ever since system, computer systems was a thing, has always been with us. And I've always be there. Okay, that's all I have for you today. So I'm can take any questions. Yeah， so if you use.
-
-说话人 2 01:03:15 
+说话人 1 01:02:19
+A final word is that it is the case that Harbor is getting better. So you might think that, well, maybe none of this is really necessary because in five years, everything will fit in, you know, L1L HPM. So this is not gonna be the case because those might grow quite a bit, although there are still physical limits, will always be ending up with bigger models that sort of s are at the limit of what the harbor can do. So this hard cocal structure, ever since system, computer systems was a thing, has always been with us. And I've always be there. Okay, that's all I have for you today. So I'm can take any questions. Yeah, so if you use.
+说话人 2 01:03:15
 The same set of parameters the forward pass might be different because like your normalization might be a function of the input data set. Then.
-
-说话人 1 01:03:30 
+说话人 1 01:03:30
 That's fine. Look, for. So the question is, in data parallel, you're saying that even though the parameters are all kind of synchronize, there could be other things that depend on the data, like in batch norm. So I don't actually have know how you dashboards. I was kind of annoying. So I don't know exactly how you would do that off the top of my head. And at least in the LM world, that doesn't really show up because layer norm is used and as long as you initialize all the parameters and using the same random seed, you'll be fine.
-
-说话人 1 01:04:16 
+说话人 1 01:04:16
 I mean, there could be like non determinium issues on the GPU, but hopefully those are, you know, minor. Yeah, there's no way to do it by because something, but they use hydrogen. So the question is, does Pytorch have some niceties as well? Kind of like what jacks offers is that, yeah. So I mean, Pipe Torch does have the FSDP library, which you should absolutely use if you're not taking this class, which basically is a wrapper. You define any model and it just does SFDP on it.
-
-说话人 1 01:05:01 
+说话人 1 01:05:01
 I think that now if you're asking how well I can more custom allow you to more do custom sharding, I think there are some things that are coming, but it's not as, I think as developed. I mean, I think there's sort of this, I think, spectrum between the Jack's world where you sort of declarity define things. And I think the Google infrastructure, if you stay within the Jack's TPU system, is pretty well developed. And, but then if you look at kind of deep sink, which is a kind of the opposite end where you have these GPUs with actually really bad Inter, you know, connect, which means that they have to go in and hack, you know, they actually go to the kind of nickel level and actually do a bunch of things, which I don't quite understand, to eke out the performance. Whereas if you're writing a Jackson just to kind of from on high declare your model and then, you know, stuff happens. So it's kind of the ways that you leverage hardware, I think really depends on what ecosystem you're operating in.
-
-说话人 2 01:06:14 
+说话人 2 01:06:14
 Yeah, the fair way, marriage, recomplete, some active subset of the activations for the performance is that idea which may Alice? Well, yeah, so the.
-
-说话人 1 01:06:29 
+说话人 1 01:06:29
 Question is activation checkpointing, what's there is an API that's best basically allows you to in, I mean, I guess in Pytorch and Jack's to specify which parts you want to recompute because clearly you don't want to recompute, you know, everything and or nothing. Probably every few layers, probably right after like big mat malls where for example, if you have, let's say, memo and then point wise linearity, I don't think you need to store like two copies of. And basically if you have two things where it's sort of trivial to com get to, then you might as well just store, you know, one version. Yeah, over there, user.
-
-说话人 2 01:07:21 
+说话人 2 01:07:21
 Specific hardware or like a more specialized hardware.
-
-说话人 1 01:07:24 
+说话人 1 01:07:24
 So the question is, our GPU's gonna ever be replaced by transformer specific hardware. So you've seen this in the inference space quite a bit already with like Grok and Cerebras have specialized hardware that can do inference. And also, I guess, training. So rivers, this training. So basically those hard hardwares essentially give you just a lot more kind of on ship memory. I mean, that's basically the name of the game. I think it's a reverse has like a huge, you know, essentially, effectively a L1 cache. So you don't have to move things off. And I think a lot of simplifications can happen because GPUs were, there's a lot of baggage, actually, if you think about, because they were divine in an era where you had to do a lot of branching and like, you know, various types of ad hoc computations, which are not really needed in the deep learning regime. So I think there are quite a few opportunities to. To improve the hardware as well. I think there was a hand back there. And I'll.
-
-说话人 2 01:08:35 
+说话人 2 01:08:35
 I don't know if like, if this is like the right question, but I'm thinking not, but in the context of the lecture piece, basically a model that's being trained in one goal that's being optimizing itself. But I'm wondering if any other taken care. We're talking about Chinese to implementation model. For example, I forget not just to like fine tune, but actually to kind of recalculate everything and not everything recalculated.
-
-说话人 1 01:09:05 
+说话人 1 01:09:05
 Yeah, so the question is, can these techniques be used to essentially do continued training? Yeah, absolutely. So if you think about the unit of what we're working on, it's just doing gradient steps, right? So if you take a half train, you know, checkpoint, you can just like continue doing what this is. There's nothing specific about starting from scratch here.
-
-说话人 2 01:09:32 
+说话人 2 01:09:32
 If there's a question there, yeah, so I'm gonna like the model specific hardware ends. No previous question. Like presumably there is a like a physical technical reason you can't make nodes much larger than they're currently. Like what's the change that you're talking about? Like, so if you could just make GPU nodes like infinitely, like as big as you wanted, people would do that. So presumably, and there is a tech like a.
-
-说话人 1 01:10:09 
+说话人 1 01:10:09
 Hardware reason that's not possible.
-
-说话人 2 01:10:10 
+说话人 2 01:10:10
 So what's the actual advancement being done for doing the rob specific harmony mission?
-
-说话人 1 01:10:16 
+说话人 1 01:10:16
 Yeah, so the question is, there are physical limits for sure for, you know, for GPU. Let me just go. So the, so you can make GPUs oscillate infinitely large or infinitely dense.
-
-说话人 1 01:10:32 
+说话人 1 01:10:32
 I mean, there's also like, you know, power issues. You know, you do get rid of all the heat and, you know, there's only so much kind of bandwidth I can, you know, fit. So I don't know the exact, you know, details, but at least in just some of the cerebrous case, I mean, they sort of have this way of, you know, manufacturing, you know, basically the chips so that the memory is kind of on the chip. So I guess it's just a way of putting it on there. And I think that there are obviously no tradeoffs because it comes at a cost of not having as much your flexibility.
-
-说话人 1 01:11:21 
+说话人 1 01:11:21
 But in general, I think the way to maybe think about this more broadly is that, you know, GPUs were still developing kind of the CPU era where it's much more control focused. I have code that I'm executing. That's the sort of first class citizen and then data needs to be moved to, you know, execute the to handle the code. But the big difference with deep learning workloads is that it's all sort of data flow. Like the computation graph, if you look at these swimmers, is like static, you know, from the beginning, exactly all the computations that are gonna be done until essentially the end of training, right? So using that knowledge, you should be able to kind of lay out your computation in a much smarter way than having to deal with the flexibility uncertainty over ad hoc computation. Okay, maybe a few more questions now. And.
-
-说话人 2 01:12:20 
+说话人 2 01:12:20
 Yeah, it's the combination of usually stored in the city or in the.
-
-说话人 1 01:12:26 
+说话人 1 01:12:26
 So the question is, where is the computation graph stored? Well, the code is all the, I mean, all this code is running on this, you know, CPU. But when you call something like love I torch function, it that needs to run on GPU, then it launches kernels under the hood. And the kernels are a code that runs on the GP. Yeah, I'm not sure of that. So I guess maybe another answer is that the computation graph is more of a, I guess, a conceptual, you know, it's not like there is a graph literally that's being, you know, I mean, I guess there sort of is, but it's, it's, it's, and it's not like the graph gets put on the GPU. That makes sense.
-
-说话人 2 01:13:26 
+说话人 2 01:13:26
 Okay, so these communication primitives. We have like to receive and set.
-
-说话人 2 01:13:40 
+说话人 2 01:13:40
 English.
-
-说话人 1 01:13:42 
+说话人 1 01:13:42
 So the question is, the communication parameters, are they CPU or GPU? So these collective operations are in some sense abstract specification of what types of operations need to happen, which can happen. If you remember, this Pytorch distributed has different backends. So it could happen on GPU or happen on CPU. Fire.
-
-说话人 2 01:14:11 
+说话人 2 01:14:11
 Perfect. And for when you are having a CPU, is it like it is the CPUs or of scheduling them or is it for them to join?
-
-说话人 1 01:14:20 
+说话人 1 01:14:20
 Yeah, so, well, the CPU sort of drives basically is a sort of the master cell. And then when you do a collective cooperation, it calls a nickel library which launches, which is, you know, you, it's still CPU and then it launches some kernels at move data around. Okay. Maybe this is a good place to end. Alright, I will see you next Monday.
-
-说话人 2 01:14:46 
+说话人 2 01:14:46
 So Tuesday morning. Yes.
-
