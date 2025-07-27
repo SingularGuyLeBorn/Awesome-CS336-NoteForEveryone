@@ -1,10 +1,10 @@
-# 专题：混合专家模型 (Mixture of Experts, MoE)
+# 专题: 混合专家模型 (Mixture of Experts, MoE)
 ## 1. 核心思想
-混合专家模型(Mixture of Experts, MoE)是一种神经网络架构,旨在以更低的计算成本来增加模型的参数量. 其核心思想是：**将一个大的、密集的模型层(如前馈网络 FFN)替换为多个并行的、更小的“专家”层(Experts)和一个用于选择专家的“门控网络”(Gating Network). **
+混合专家模型(Mixture of Experts, MoE)是一种神经网络架构,旨在以更低的计算成本来增加模型的参数量. 其核心思想是: **将一个大的、密集的模型层(如前馈网络 FFN)替换为多个并行的、更小的“专家”层(Experts)和一个用于选择专家的“门控网络”(Gating Network). **
 对于每一个输入的 token,门控网络会动态地、有选择性地激活一个或少数几个专家来处理它. 其他未被选中的专家则保持不活动状态,不参与计算. 
-这种“条件计算”(Conditional Computation)的策略带来了巨大的好处：**可以在模型总参数量大幅增加的同时,保持每个 token 的前向传播计算量(FLOPs)基本不变或仅少量增加. **
+这种“条件计算”(Conditional Computation)的策略带来了巨大的好处: **可以在模型总参数量大幅增加的同时,保持每个 token 的前向传播计算量(FLOPs)基本不变或仅少量增加. **
 ## 2. 架构与工作原理
-一个典型的 MoE 层(通常用于替代 **[Transformer](./Lecture1-Transformer.md)** 中的 FFN 层)的工作流程如下：
+一个典型的 MoE 层(通常用于替代 **[Transformer](./Lecture1-Transformer.md)** 中的 FFN 层)的工作流程如下: 
 1.  **输入:** 一个 token 的表示向量 `x`. 
 2.  **门控网络 (Gating Network):**
     *   这是一个小型的神经网络(通常是一个简单的线性层). 

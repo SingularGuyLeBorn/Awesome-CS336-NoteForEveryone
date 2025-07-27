@@ -25,15 +25,73 @@
 
 这种估算能力,能让你在项目初期就对成本和周期有清晰的认知,是专业工程师的必备素养.
 
+### Q: 使用AdamW,在H100上训练的最大模型是多大,如果不采取任何的优化手段
+
+A:H100有100GB的HBM,参数,梯度和优化器的每个参数需要16Byte,参数量=总显存量/参数所需字节数
+
+80*1024*1024/16≈40B.这个估算非常粗略,因为没考虑激活值,激活值取决于Batchsize和Sequence Length
+
+> 这是绝大多数人都不习惯做的事情,大多数人就是训练一个模型,然后就看到结果了. 但记住,效率是关键
+
 ## 一、 内存核算 (Memory Accounting)
 
-深度学习中的一切——参数、梯度、优化器状态、数据、激活值——都存储在一种叫做**[张量 (Tensors)](./Lecture2-PyTorch-Tensors.md)**的数据结构中. 因此,理解内存占用的第一步,就是理解一个张量占多少内存.
+深度学习中的一切——参数、梯度、优化器状态、数据、激活值——都存储在一种叫做[张量 (Tensors)](./Lecture2-PyTorch-Tensors.md)的数据结构中. 因此,理解内存占用的第一步,就是理解一个张量占多少内存.
 
 ### 1.1 核心构建块:张量与浮点数
 
-张量的内存占用由两个因素决定:元素的数量和每个元素的数据类型. 在深度学习中,最核心的数据类型是**[浮点数 (Floating-Point Numbers)](./Lecture2-Floating-Point-Representations.md)**. 不同的浮点数格式在精度和内存占用上有所不同,直接影响模型的训练稳定性和效率.
+张量的内存占用由两个因素决定:元素的数量和每个元素的数据类型. 在深度学习中,最核心的数据类型是[浮点数 (Floating-Point Numbers)](./Lecture2-Floating-Point-Representations.md). 不同的浮点数格式在精度和内存占用上有所不同,直接影响模型的训练稳定性和效率.
+
+```python
+import torch
+import torch.nn as nn
+import math
+
+# --- 1. 常规创建方法 ---
+
+# 从 Python 列表直接创建
+tensor_from_data = torch.tensor([[1., 2.], [3., 4.]])
+
+# 创建指定形状的全0张量
+zeros_tensor = torch.zeros(3, 4)
+
+# 创建指定形状的、服从标准正态分布的随机张量
+randn_tensor = torch.randn(3, 4)
+
+# 创建一个未初始化的张量 
+empty_tensor = torch.empty(3, 4)
+
+
+# --- 2. 特殊初始化方法 (通常在 nn.Module 内部对参数使用) ---
+
+# 准备一个线性层的权重张量用于演示
+weight = torch.empty(128, 512)
+
+# 方法一: Xavier (Glorot) 初始化 
+# PyTorch 提供了两种实现: 
+# a) 均匀分布版本
+nn.init.xavier_uniform_(weight)
+# b) 正态分布版本
+nn.init.xavier_normal_(weight)
+
+# 方法二: 截断正态分布 (Truncated Normal) 初始化 
+# 从正态分布 N(0, 0.02^2) 中采样,但丢弃所有在 [-0.04, 0.04] 之外的值
+nn.init.trunc_normal_(weight, std=0.02, a=-0.04, b=0.04)
+
+# 方法三: 手动实现讲座中描述的方差缩放原则 
+# 这有助于深刻理解其背后原理
+input_features = 512
+manual_scaled_weight = torch.randn(128, input_features) / math.sqrt(input_features)
+```
 
 例如,一个`torch.float32`类型的 `4x8` 矩阵,包含32个元素. 每个`float32`元素占用4个字节(32位),因此总内存为 `32 * 4 = 128` 字节. 对于真实的大模型,比如GPT-3中的一个FFN(前馈网络)权重矩阵,其尺寸可能达到 `2048 x 8192`,仅这一个矩阵就需要2.3GB的`float32`内存.
+
+#### Float32 全精度数据格式
+
+当然这个全精度的表达也得分人,如果你和搞科学计算的人交流他们会笑话你,因为他们会使用float64,甚至更高. 但是如果你和搞机器学习的人这么说,那他会表示: 我不能同意更多
+
+> 是的,深度学习就是这么不拘小节(sloppy like that)
+
+![](.files/s733wPM0Wf1GUHq.png)
 
 ### 1.2 硬件上的内存:CPU与GPU
 
@@ -57,7 +115,7 @@ y_gpu = torch.randn(32, 32, device='cuda')
 张量运算构成了模型计算的核心. 虽然有各种逐元素操作(如`add`, `sin`),但深度学习中算力消耗的绝对大头是**矩阵乘法 (Matrix Multiplication, MatMul)**.
 
 一个尺寸为 `(B, D)` 的矩阵与一个 `(D, K)` 的矩阵相乘,得到一个 `(B, K)` 的矩阵. 其所需的浮点运算次数 (FLOPS) 为:
-  
+
 `FLOPS = 2 * B * D * K`
 
 这里的“2”代表了每次乘法和加法运算. 这个公式是进行算力估算的基础. 在语言模型中,操作通常是批处理的,例如一个张量的维度可能是 `(Batch, Sequence, Hidden)`,PyTorch能够优雅地处理这种批处理的矩阵乘法.
@@ -78,7 +136,7 @@ y_gpu = torch.randn(32, 32, device='cuda')
 在处理高维张量时,使用索引(如`-1`, `-2`)来进行维度转换(如`transpose`)和矩阵乘法,非常容易出错且难以阅读. `einops`(爱因斯坦求和约定操作)库提供了一种更直观、更不易出错的方案. 它通过为维度命名的字符串来描述张量操作.
 
 例如,要将两个形状为 `(batch, sequence, hidden)` 的张量进行内积,传统方法可能是:
-  
+
 `result = torch.matmul(x, y.transpose(-2, -1))`
 
 使用 `einops`,代码变得清晰可读:

@@ -1,7 +1,7 @@
-# 专题：监督式微调 (Supervised Fine-Tuning, SFT)
+# 专题: 监督式微调 (Supervised Fine-Tuning, SFT)
 ## 1. 核心思想
 **监督式微调 (Supervised Fine-Tuning, SFT)**,也常被称为指令微调(Instruction Tuning),是**[语言模型](./Lecture1-Language-Models.md)**对齐(Alignment)过程中的第一个关键阶段. 
-其核心思想是：**使用一个由高质量的“指令-回答”(Instruction-Response)对组成的数据集,以标准的监督学习方式来微调一个已经经过预训练的基础模型(Base Model). **
+其核心思想是: **使用一个由高质量的“指令-回答”(Instruction-Response)对组成的数据集,以标准的监督学习方式来微调一个已经经过预训练的基础模型(Base Model). **
 这个过程的目的是教会模型**如何遵循人类的指令**. 一个未经 SFT 的基础模型,尽管知识渊博,但它只会进行“文本补全”(text completion),而不是“指令遵循”(instruction following). 例如,如果你给基础模型输入“写一首关于月亮的诗”,它可能会续写成“……是谁在去年提出的问题？”,而不是直接写诗. 
 SFT 的目标就是弥合这种行为上的差距,让模型学会以一种有用的、对话式的、遵循指令的方式与用户互动. 
 ## 2. SFT 的工作流程

@@ -3,7 +3,7 @@ import os
 def split_markdown_file(input_file_path: str, output_directory: str):
     """
     读取一个包含多个Markdown文件内容的文本文件,并将其分割成独立的.md文件. 
-    文件内容块由以下格式的分隔符定义：
+    文件内容块由以下格式的分隔符定义: 
     --- FILE: [filename.md] ---
     (文件内容...)
     --- END OF FILE ---
@@ -17,17 +17,17 @@ def split_markdown_file(input_file_path: str, output_directory: str):
         os.makedirs(output_directory, exist_ok=True)
         print(f"输出目录 '{output_directory}' 已准备好. ")
     except OSError as e:
-        print(f"错误：无法创建目录 {output_directory}. 原因: {e}")
+        print(f"错误: 无法创建目录 {output_directory}. 原因: {e}")
         return
     # 2. 读取源文件内容
     try:
         with open(input_file_path, 'r', encoding='utf-8') as f:
             content = f.read()
     except FileNotFoundError:
-        print(f"错误：输入文件未找到 -> {input_file_path}")
+        print(f"错误: 输入文件未找到 -> {input_file_path}")
         return
     except Exception as e:
-        print(f"错误：读取文件时出错. 原因: {e}")
+        print(f"错误: 读取文件时出错. 原因: {e}")
         return
     # 3. 使用正则表达式查找所有文件块
     # 正则表达式解释:

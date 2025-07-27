@@ -1,15 +1,15 @@
-# 专题：BERT (Bidirectional Encoder Representations from Transformers)
+# 专题: BERT (Bidirectional Encoder Representations from Transformers)
 ## 1. 核心贡献
 BERT 是 Google AI 在 2018 年的论文《BERT: Pre-training of Deep Bidirectional Representations for Language Understanding》中提出的一个里程碑式的**[语言模型](./Lecture1-Language-Models.md)**. 它的出现彻底改变了自然语言处理(NLP)的研究范式,开启了“预训练-微调”(Pre-training and Fine-tuning)的新时代. 
-BERT 的核心贡献在于：**通过创新的预训练任务,成功地训练了一个深度的、双向的 Transformer 表示模型,使其能够捕捉到丰富的上下文信息. **
+BERT 的核心贡献在于: **通过创新的预训练任务,成功地训练了一个深度的、双向的 Transformer 表示模型,使其能够捕捉到丰富的上下文信息. **
 与之前的模型(如 GPT-1 是单向的,ELMo 是浅层拼接的双向)不同,BERT 真正实现了在模型的每一层都能同时“看到”句子的左右两边的上下文,这对于语言理解任务至关重要. 
 ## 2. 模型/方法概述
-### 2.1 架构：仅编码器
-BERT 的模型架构采用了 **[Transformer](./Lecture1-Transformer.md)** 的编码器(Encoder)部分. 它有两个主要版本：
+### 2.1 架构: 仅编码器
+BERT 的模型架构采用了 **[Transformer](./Lecture1-Transformer.md)** 的编码器(Encoder)部分. 它有两个主要版本: 
 *   **BERT-Base:** 12 层,768 隐藏单元,12 个注意力头,总计 1.1 亿参数. 
 *   **BERT-Large:** 24 层,1024 隐藏单元,16 个注意力头,总计 3.4 亿参数. 
 ### 2.2 预训练任务
-为了实现深度的双向表示,BERT 设计了两个巧妙的预训练任务：
+为了实现深度的双向表示,BERT 设计了两个巧妙的预训练任务: 
 1.  **掩码语言模型 (Masked Language Model, MLM):**
     *   **思想:** 传统的语言模型是单向的(从左到右预测下一个词),无法直接用于训练双向模型(否则模型就能“作弊”看到要预测的词). 为了解决这个问题,MLM 任务随机地“掩码”(mask)掉输入句子中 15% 的 token,然后让模型去预测这些被掩码的 token 的原始值. 
     *   **具体实现:**

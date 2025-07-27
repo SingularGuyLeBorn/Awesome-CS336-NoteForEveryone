@@ -1,17 +1,17 @@
-# 专题：伸缩法则 (Scaling Laws)
+# 专题: 伸缩法则 (Scaling Laws)
 ## 1. 核心思想
 **伸缩法则 (Scaling Laws)** 是指描述**[语言模型](./Lecture1-Language-Models.md)**性能与其规模(通常指模型参数量、训练数据集大小和所用计算量)之间关系的经验性公式. 这些法则表明,模型的性能(通常用交叉熵损失来衡量)会随着规模的增长而呈现出可预测的、幂律(Power Law)形式的改善. 
-这个领域由 OpenAI 的 Jared Kaplan 等人在 2020 年的论文《Scaling Laws for Neural Language Models》中开创. 其核心发现是：
-**在数据量足够大的情况下,模型在测试集上的损失 (Loss) 主要由模型参数量 (N) 决定,并且可以用一个平滑的幂律公式来预测：L(N) = (N_c / N)^α**
+这个领域由 OpenAI 的 Jared Kaplan 等人在 2020 年的论文《Scaling Laws for Neural Language Models》中开创. 其核心发现是: 
+**在数据量足够大的情况下,模型在测试集上的损失 (Loss) 主要由模型参数量 (N) 决定,并且可以用一个平滑的幂律公式来预测: L(N) = (N_c / N)^α**
 其中 `L(N)` 是损失,`N` 是非嵌入参数的数量,`N_c` 和 `α` 是通过拟合实验数据得到的常数. 
 ## 2. 关键发现与演进
 ### 2.1 Kaplan et al. (OpenAI, 2020)
 *   **核心结论:** 性能主要受模型大小(参数量 `N`)的限制. 为了达到最佳性能,应该优先考虑扩大模型规模,而不是无限制地增加数据量. 他们建议,在给定计算预算下,应该训练一个尽可能大的模型,直到它开始在训练数据上过拟合. 
 *   **影响:** 这篇论文极大地推动了“模型越大越好”的思潮,直接促成了 **[GPT-3](./Lecture1-GPT-4.md)** 等巨型模型的诞生. 
 ### 2.2 Hoffmann et al. (DeepMind, 2022) - Chinchilla
-DeepMind 的研究人员在论文《Training Compute-Optimal Large Language Models》中对 Kaplan 的结论提出了修正和补充. 他们通过更广泛的实验发现：
+DeepMind 的研究人员在论文《Training Compute-Optimal Large Language Models》中对 Kaplan 的结论提出了修正和补充. 他们通过更广泛的实验发现: 
 *   **核心结论:** 为了在给定的计算预算(FLOPs)下达到最佳性能,**模型大小 (N) 和训练数据量 (D) 应该按比例同步增长**. Kaplan 等人之所以得出“模型大小更重要”的结论,是因为他们是在一个“计算受限、数据相对充足”的区域进行实验. 
-*   **[Chinchilla Optimal](./Lecture1-Chinchilla-Optimal.md) 法则:** 他们得出了一个著名的经验法则：**对于一个大小为 N 的模型,最优的训练数据量 D 约等于 20 * N**. 也就是说,每增加一个模型参数,就应该用大约 20 个 token 来进行训练. 
+*   **[Chinchilla Optimal](./Lecture1-Chinchilla-Optimal.md) 法则:** 他们得出了一个著名的经验法则: **对于一个大小为 N 的模型,最优的训练数据量 D 约等于 20 * N**. 也就是说,每增加一个模型参数,就应该用大约 20 个 token 来进行训练. 
 *   **Chinchilla 模型:** 基于这个发现,他们训练了一个名为 Chinchilla 的 70B 模型. 该模型虽然比 Gopher (280B) 小 4 倍,但使用了 4 倍的训练数据(1.4T tokens). 结果,Chinchilla 在多项基准测试上都超越了 Gopher. 
 ## 3. 伸缩法则的意义
 1.  **可预测性与工程指导:** 伸缩法则最大的价值在于,它允许研究人员和工程师在进行昂贵的大规模训练之前,通过在小得多的规模上进行实验,来**预测最终模型的性能**和**选择最优的超参数**(如模型大小、学习率). 这极大地降低了训练超大模型的风险和成本. 
