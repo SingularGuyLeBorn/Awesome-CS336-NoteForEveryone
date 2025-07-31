@@ -1,4 +1,4 @@
-ROPE的不同实现：llama&palm
+ROPE的不同实现:llama&palm
 原文: https://zhuanlan.zhihu.com/p/627536105
 
 基于Decoder的LLM为何需要位置编码？
@@ -10,12 +10,12 @@ https://www.zhihu.com/question/640465759/answer/3411037696
 [LLM理论系列] RoPE 方法
 https://zhuanlan.zhihu.com/p/20052942525
 
-十分钟读懂旋转编码（RoPE）
+十分钟读懂旋转编码(RoPE)
 https://zhuanlan.zhihu.com/p/647109286
 
 LLM学习笔记-位置编码篇
 
-从Sinusoidal到RoPE（一）
+从Sinusoidal到RoPE(一)
 https://zhuanlan.zhihu.com/p/712276260
 
 基于Decoder的LLM为何需要位置编码？

@@ -61,12 +61,12 @@ RoPE的突破性思想源于一个简单的几何事实:**两个向量的点积�
 
 
 
-- [ROPE的不同实现：llama&palm](https://zhuanlan.zhihu.com/p/627536105)
+- [ROPE的不同实现:llama&palm](https://zhuanlan.zhihu.com/p/627536105)
 - [基于Decoder的LLM为何需要位置编码？](https://www.zhihu.com/question/640465759/answer/3411037696)
 - [手撕LLM-NTK RoPE](https://zhuanlan.zhihu.com/p/702964625)
 - [[LLM理论系列] RoPE 方法](https://zhuanlan.zhihu.com/p/20052942525)
-- [十分钟读懂旋转编码（RoPE）](https://zhuanlan.zhihu.com/p/647109286)
-- [从Sinusoidal到RoPE（一）](https://zhuanlan.zhihu.com/p/712276260)
+- [十分钟读懂旋转编码(RoPE)](https://zhuanlan.zhihu.com/p/647109286)
+- [从Sinusoidal到RoPE(一)](https://zhuanlan.zhihu.com/p/712276260)
 - [基于Decoder的LLM为何需要位置编码？](https://kexue.fm/archives/10347)
 - [长文本外推——详解RoPE的功过是非](https://zhuanlan.zhihu.com/p/14369935885)
 - [[通俗易读]无痛理解旋转位置编码RoPE](https://zhuanlan.zhihu.com/p/8306958113)
