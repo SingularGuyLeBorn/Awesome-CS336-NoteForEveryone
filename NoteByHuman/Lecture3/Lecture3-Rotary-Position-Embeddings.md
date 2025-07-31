@@ -7,9 +7,9 @@
 自注意力的核心是计算查询(Query)和键(Key)向量之间的点积,以得到注意力分数. 一个理想的位置编码方案应该使得这个点积只依赖于两个词的**内容**和它们的**相对位置**,而与它们的**绝对位置**无关.
 
 用数学语言来说,给定两个词`x`和`y`,它们的绝对位置分别为`i`和`j`,我们希望它们的位置编码函数`f`满足:
-  
+
 `<f(x, i), f(y, j)> = g(x, y, i - j)`
-  
+
 其中 `<,>` 代表点积,`g` 是某个只依赖于相对位置`i - j`的函数.
 
 早期的位置编码方法无法完美实现这一点:
@@ -31,7 +31,7 @@ RoPE的突破性思想源于一个简单的几何事实:**两个向量的点积�
 ![](https://storage.googleapis.com/static.a-b-c/project-daedalus/L3-P32.png)
 
 
-  
+
 上图直观地展示了这个过程:无论"we"和"know"在句子中的绝对位置如何变化,只要它们的相对距离保持不变,它们对应的旋转后向量之间的夹角就保持不变,从而点积(注意力分数)也保持稳定.
 
 ### 3. 高维空间的实现
@@ -58,3 +58,16 @@ RoPE的突破性思想源于一个简单的几何事实:**两个向量的点积�
 ![](https://storage.googleapis.com/static.a-b-c/project-daedalus/L3-P35.png)
 
 这种在注意力计算时即时应用的“侵入式”方法,是保证相对位置编码有效性的关键. RoPE因其理论的优雅性和在长序列建模上的卓越表现,已成为现代LLM架构的黄金标准.
+
+
+
+- [ROPE的不同实现：llama&palm](https://zhuanlan.zhihu.com/p/627536105)
+- [基于Decoder的LLM为何需要位置编码？](https://www.zhihu.com/question/640465759/answer/3411037696)
+- [手撕LLM-NTK RoPE](https://zhuanlan.zhihu.com/p/702964625)
+- [[LLM理论系列] RoPE 方法](https://zhuanlan.zhihu.com/p/20052942525)
+- [十分钟读懂旋转编码（RoPE）](https://zhuanlan.zhihu.com/p/647109286)
+- [从Sinusoidal到RoPE（一）](https://zhuanlan.zhihu.com/p/712276260)
+- [基于Decoder的LLM为何需要位置编码？](https://kexue.fm/archives/10347)
+- [长文本外推——详解RoPE的功过是非](https://zhuanlan.zhihu.com/p/14369935885)
+- [[通俗易读]无痛理解旋转位置编码RoPE](https://zhuanlan.zhihu.com/p/8306958113)
+- [位置编码之路](https://zhuanlan.zhihu.com/p/1894384438206505105)
