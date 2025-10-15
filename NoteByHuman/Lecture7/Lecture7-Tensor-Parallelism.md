@@ -19,7 +19,7 @@
 
 为了更直观地理解这一点,我们可以参考一个简单的多层感知机(MLP)的计算图。
 
-![Computation Graph for MLP](img_20.png)
+![Computation Graph for MLP](imgs/img_20.png)
 > 一个简单的MLP计算图
 
 上图清晰地展示了前向传播(Forward)和反向传播(Backward)的数据流。
@@ -47,7 +47,7 @@
 
 ##### **3.1 标准 1F1B 调度**
 
-![1F1B pipeline schedule](img_21.png)
+![1F1B pipeline schedule](imgs/img_21.png)
 
 > 1F1B 流水线调度示意图
 
@@ -55,7 +55,7 @@
 
 ##### **3.2 零气泡 (ZB) 调度详解**
 
-![Zero-bubble handcrafted schedules](img_22.png)
+![Zero-bubble handcrafted schedules](imgs/img_22.png)
 
 > 手工设计的零气泡流水线调度 (ZB-H1/H2)
 

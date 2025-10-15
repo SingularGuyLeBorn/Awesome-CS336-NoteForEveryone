@@ -19,7 +19,7 @@
 
 为了更直观地理解这一点, 我们可以参考一个简单的MLP的计算图.
 
-![Computation Graph for MLP](img_20.png)
+![Computation Graph for MLP](imgs/img_20.png)
 
 > 一个简单的MLP计算图
 
@@ -50,7 +50,7 @@
 
 ##### **3.1 标准 1F1B 调度**
 
-![1F1B pipeline schedule](img_16.png)
+![1F1B pipeline schedule](imgs/img_16.png)
 
 > 1F1B 流水线调度示意图
 
@@ -58,7 +58,7 @@
 
 ##### **3.2 零气泡 (ZB) 调度详解**
 
-![Zero-bubble handcrafted schedules](img_17.png)
+![Zero-bubble handcrafted schedules](imgs/img_17.png)
 
 > 手工设计的零气泡流水线调度 (ZB-H1/H2)
 
