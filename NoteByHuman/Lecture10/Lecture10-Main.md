@@ -120,7 +120,13 @@ $$ \text{KV\_Size} = S \times (K \cdot H) \times L \times 2 \times 2 \text{ (byt
 *   **原理**: 不仅在头之间共享 KV（如GQA），还在**层（Layers）**之间共享 KV。
 *   **效果**: 进一步压缩内存，提升了精度/内存的帕累托前沿。
 
-**[插入图片: lecture_10.pdf, 第19页, 图1, 描述: CLA示意图，展示KV在不同层间的共享]**
+![Cross-Layer Attention](images/cross_layer_attention.png)
+
+> **图示详细解读 (CLA)**:
+> *   **传统 Transformer**: 每一层都有自己独立的 KV Cache。
+> *   **Cross-Layer Attention (CLA)**: 利用了相邻层之间激活模式的高度相似性。
+>     *   **机制**: 第 $i$ 层和第 $i+1$ 层共享同一份 Key/Value 矩阵。
+>     *   **收益**: KV Cache 内存直接减半（2层共享），或者减少更多（多层共享）。这是在不牺牲太多精度的情况下压缩内存的有效手段。
 
 #### D. 局部注意力 (**Local Attention**)
 *   **原理**: 只关注最近的 $K$ 个 Token。
@@ -139,15 +145,37 @@ $$ \text{KV\_Size} = S \times (K \cdot H) \times L \times 2 \times 2 \text{ (byt
     *   **缺点**: 在“联想回忆（Associative Recall）”任务上表现不佳（例如：根据键找值）。
     *   **现状**: **混合架构**是主流。例如 Jamba (Transformer + Mamba) 或 MiniMax-01 (Linear Attention + Full Attention)。仅保留少量 Full Attention 层即可维持高精度。
 
-**[插入图片: lecture_10.pdf, 第21页, 图1, 描述: S4模型摘要]**
-**[插入图片: lecture_10.pdf, 第22页, 图1, 描述: SSM在联想回忆任务上的弱点]**
+![S4 Model Architecture](images/s4_architecture.png)
+
+> **图示详细解读 (S4 Model)**:
+> *   **HiPPO Matrix**: 图中通过特定的矩阵结构（HiPPO）将长序列压缩到固定大小的状态中。
+> *   **连续 -> 离散**: S4 起源于连续时间下的微分方程控制理论，通过离散化（Discretization）应用到深度学习序列建模中。
+> *   **线性复杂度**: 相比 Transformer 的 $O(N^2)$ (Attention Map)，S4 实现了 $O(N)$ 的推理复杂度。
+
+#### 4.1.1 SSM 的弱点：联想回忆 (Associative Recall)
+
+![Mamba vs Transformer Architecture](images/mamba_ssm_architecture.png)
+
+> **图示详细解读 (SSM Weakness)**:
+> *   **任务**: 联想回忆任务（例如：Given "Key: A, Value: 1", later ask "Key: A", expect "1"）。
+> *   **Transformer (Attention)**: 就像一本“完美的电话簿”，可以直接查找（Query）历史记录中的任何位置，轻松解决此任务。
+> *   **传统 SSM**: 状态 $h_t$ 容量有限，随着时间推移，旧信息（Key: A）会被新信息“冲刷”掉（Exponential Decay），导致难以回忆起很久之前的精确关联。
+> *   **改进**: Mamba 引入了**选择性扫描 (Selective Scan)** 机制，允许模型动态决定“记住”什么和“遗忘”什么，从而部分解决了这个问题。
 
 ### 4.2 扩散模型 (**Diffusion Models**)
 *   **原理**: 不再是自回归（一个接一个），而是**并行生成所有 Token**，然后通过多次迭代“去噪”精炼。
 *   **优势**: 极高的生成速度（Inception Labs 演示）。
 *   **潜力**: 彻底改变推理的游戏规则。
 
-**[插入图片: lecture_10.pdf, 第25页, 图1, 描述: Diffusion-LM的生成过程]**
+![Diffusion-LM Generation](images/diffusion_lm.png)
+
+> **图示详细解读 (Diffusion-LM Process)**:
+> *   **非自回归 (Non-Autoregressive)**: 与 GPT 逐个字生成不同，Diffusion-LM **同时生成所有 Token**。
+> *   **去噪过程 (Denoising)**:
+>     1.  **Start**: 从纯高斯噪声开始（图中左侧乱码）。
+>     2.  **Steps**: 经过几百步的迭代去噪，原本模糊的向量逐渐清晰，坍缩成具体的 Word Embedding。
+>     3.  **End**: 最终映射回离散的 Token（右侧连贯句子）。
+> *   **可控性**: 这种生成方式由于是在连续空间操作，非常容易施加额外的约束（如“必须包含某个词”、“必须押韵”等），做**可控生成 (Controllable Generation)** 比自回归模型容易得多。
 
 ---
 
