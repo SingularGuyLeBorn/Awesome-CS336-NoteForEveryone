@@ -21,6 +21,8 @@ Scaling Laws 的核心目的就在于此：**通过在小规模模型上建立�
     3.  将规律**外推（Extrapolate）**到大模型。
     4.  在构建大模型时“一击即中”。
 
+![Scaling Laws Extrapolation](images/lecture9-intro-extrapolation.png)
+
 ---
 
 ## 2. Scaling Laws 的历史与背景
@@ -45,7 +47,7 @@ Scaling Laws 本质上是告诉我们：随着数据量增加或模型变大，�
         3.  **不可约误差区 (Irreducible Error)**：逼近贝叶斯误差或数据噪声极限。
     *   **前瞻性**：早在2017年，他们就预言了计算扩展的重要性、量化的必要性（用计算换精度）。
 
-**[插入图片: lecture_09.pdf, 对应 Hestness et al. 2017 的三个区域示意图, 描述: 展示误差随数据量变化经历随机区、幂律下降区和饱和区的S形曲线]**
+![Hestness Three Regions](images/lecture9-hestness-regions.png)
 
 ### 2.3 局限性：并非总是变好 (Inverse Scaling)
 Scaling Laws 暗示了“大就是好”，但在某些特定任务上，模型越大表现反而越差，这就是 **Inverse Scaling**。
@@ -102,9 +104,12 @@ Scaling Laws 暗示了“大就是好”，但在某些特定任务上，模型�
 
 ### 4.1 架构选择
 *   **Transformer vs. LSTM**：Kaplan 的结果显示，两者遵循平行的 Scaling 曲线，但 Transformer 有明显的截距优势（Loss 更低）。这意味着 LSTM 在计算效率上存在一个常数因子的劣势（比如效率低15倍）。
+
+![Transformer vs LSTM Scaling](images/lecture9-transformer-vs-lstm.png)
+
 *   **其他架构**：Google 的 Yi Tay 等人 (2022) 对比了多种架构。只有 **Gated Linear Units (GLU)** 和 **Mixture of Experts (MoE)** 能在扩展性上匹配或超越标准 Transformer。这解释了为什么现在的模型（如 LLaMA, Mixtral）普遍采用 GLU 和 MoE。
 
-**[插入图片: lecture_09.pdf, 对应 Architecture Scaling plot, 描述: 展示不同架构随计算量增加的Loss下降曲线，MoE和GLU表现突出]**
+![Architecture Scaling](images/lecture9-architecture-scaling.png)
 
 ### 4.2 超参数选择
 *   **宽深比 (Aspect Ratio)**：Kaplan 发现，在固定参数量下，不同宽深比的模型 Loss 差异形成一个宽阔的盆地（Basin）。只要宽高比在一定范围内（如 4 到 16 甚至 100），性能都非常接近最优。这意味着我们不需要纠结于精确的层数。
@@ -120,9 +125,10 @@ Scaling Laws 暗示了“大就是好”，但在某些特定任务上，模型�
 *   **物理直觉：噪声与曲率**：
     *   训练早期：梯度大，方向明确。此时主要受限于曲率（不能走太快），因此 Batch Size 不需要太大。
     *   训练后期：Loss 变小，梯度变小，**梯度噪声 (Gradient Noise)** 占据主导。为了获得准确的下降方向，我们需要平均更多的样本来抵消噪声。这就是为什么**目标 Loss 越低（模型越强/训练越久），临界 Batch Size 越大**。
-*   **工程实践**：这意味着我们要训练更强的模型，就需要使用更大的 Batch Size。这也是为什么 LLaMA 3 等大模型训练时会采用动态 Batch Size 策略（逐步增加）。
+*   **工程实践**：这意味着随着训练进行，你应该增大 Batch Size。
+    *   LLaMA 3 的训练报告中就体现了这一点：随着 Loss 下降，增加 Batch Size。
 
-**[深入探讨: 临界Batch Size与优化动力学](./Lecture9-Critical-Batch-Size.md)**
+![Critical Batch Size Trend](images/lecture9-critical-batch-size.png)
 
 #### 4.3.2 Learning Rate (学习率)
 *   **标准实践**：通常认为最佳学习率随模型宽度 $W$ 衰减，经验法则是 $LR \propto 1/W$ 或 $1/\sqrt{W}$。你需要对不同规模的模型寻找最佳 LR，然后拟合规律进行外推。
@@ -158,6 +164,8 @@ Scaling Laws 对 **Log Loss (Perplexity)** 预测极其精准。但对于下游�
 3.  找到每个预算下的 Loss 最低点（最优模型大小）。
 4.  拟合这些最低点，得出参数量与 FLOPs 的关系。
 这是最直观且被广泛引用的方法。
+
+![Chinchilla IsoFLOP Analysis](images/lecture9-chinchilla-isoflop.png)
 
 **[深入探讨: Chinchilla IsoFLOP 分析方法论](./Lecture9-Chinchilla-Methods.md)**
 
