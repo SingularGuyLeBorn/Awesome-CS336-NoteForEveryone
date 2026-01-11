@@ -106,8 +106,15 @@ $$ \text{KV\_Size} = S \times (K \cdot H) \times L \times 2 \times 2 \text{ (byt
 *   **来源**: DeepSeek V2/V3。
 *   **原理**: 不直接减少头的数量，而是将 Key/Value 向量投影到一个低维潜在空间（Latent Space）。MLA 通过低秩压缩（Low-Rank Compression）大幅减少 KV Cache，同时保持了比 MQA/GQA 更强的表达能力。
 
-![Attention Mechanisms Comparison](images/mha_gqa_mla_comparison.svg)
-*(图示: MHA vs GQA vs MQA vs MLA 的 KV Cache 结构对比。注意 MLA (最右) 如何通过压缩维度来极大地节省内存)*
+![DeepSeek MLA Architecture](images/mha_gqa_mla_comparison.svg)
+
+> **图示详细解读**:
+> *   **MHA (左一)**: 每个 Query Head (蓝色) 都有自己独立的 Key/Value Head (黄色/橙色)。存储开销最大 ($d_h n_h$)。
+> *   **GQA (左二)**: 多个 Query Head 共享一组 Key/Value Head。存储开销降低 ($d_h \cdot \text{group\_size}$)。
+> *   **MQA (左三)**: 所有 Query Head 共享**唯一**的一组 Key/Value Head。存储开销最小 ($d_h$)，但表达能力受限。
+> *   **MLA (右一)**: DeepSeek 的核心创新。它不直接存储 Key/Value，而是存储一个**低维压缩向量** (Compressed KV, 灰色细柱)。
+>     *   在推理时，这个压缩向量可以被“解压”还原为 Key/Value 参与计算。
+>     *   **优势**: 实现了比 GQA 更极致的压缩（KV Cache 极小），同时保留了类似 MHA 的多头表达能力（矩阵秩更高）。
 
 #### C. 跨层注意力 (**Cross-Layer Attention, CLA**)
 *   **原理**: 不仅在头之间共享 KV（如GQA），还在**层（Layers）**之间共享 KV。
@@ -177,11 +184,18 @@ $$ \text{KV\_Size} = S \times (K \cdot H) \times L \times 2 \times 2 \text{ (byt
 
 *   **核心性质**: **数学上保证**最终输出分布严格等同于大模型 $q$ 的分布。
 
-![Speculative Decoding Process](images/speculative_decoding.png)
-*(图示: 投机采样流程 - 草稿模型快速生成 tokens (绿色)，目标模型并行验证 (蓝色/红色)。被接受的 token 直接输出，被拒绝的 token 修正后继续。)*
+![Speculative Decoding Diagram](images/speculative_decoding_cover.png)
 
-![Speculative Decoding Speedup](images/speculative_speedup.png)
-*(图示: 加速效果对比 - 在特定任务上，投机采样可以带来 2x-3x 的速度提升，具体取决于接受率)*
+> **图示详细解读 (Speculative Decoding Process)**:
+> 上图展示了“草稿-验证”的流水线过程：
+> 1.  **Drafting (绿色部分)**: 小模型（Draft Model）快速自回归生成了一串 Token (例如: "The", "quick", "brown", "fox")。因为小模型很快，这一步延迟很低。
+> 2.  **Verification (蓝色/红色部分)**: 大模型（Target Model）接收这串 Token 作为输入，进行**一次并行前向传播 (One Parallel Forward Pass)**。
+>     *   大模型计算出每个位置的真实概率分布 $q(x)$。
+>     *   **对比**: 将 $q(x)$ 与小模型的分布 $p(x)$ 对比。
+> 3.  **Outcome (结果)**:
+>     *   **Accepted (蓝色)**: "The", "quick", "brown" 被大模型认可（接受）。这些 Token 直接输出，无需大模型逐个生成。
+>     *   **Rejected (红色)**: "fox" 被拒绝。大模型在该位置采样出了 "dog"。
+>     *   **Correction**: 最终输出序列修正为 "The quick brown dog"，并丢弃后续草稿。使用了 $K=4$ 的算力，实际上生成了 3 个有效 Token，实现了 $3\times$ 加速。
 
 **[深度分析: 投机采样的概率理论与正确性证明](./Lecture10-Speculative-Sampling-Theory.md)**
 *(点击上方链接查看关于为何该算法能保证精确采样及其拒绝采样逻辑的数学证明)*
@@ -211,7 +225,12 @@ $$ \text{KV\_Size} = S \times (K \cdot H) \times L \times 2 \times 2 \text{ (byt
 *   **优势**: 内存利用率接近 100%，且支持**前缀共享 (Prefix Sharing)**（如系统提示词共享），通过写时复制 (Copy-on-Write) 实现。
 
 ![PagedAttention Animation](images/paged_attention.gif)
-*(图示: PagedAttention 动态演示 - 展示 KV Cache block 如何被动态分配到非连续的物理内存中，消除了传统预分配带来的碎片化)*
+
+> **动画详细解读**:
+> *   **Logical KV Blocks (左侧)**: 模型看到的 KV Cache 是连续的序列 (Token 1, 2, 3...)，被划分为逻辑块 (Logical Block 0, 1...)。
+> *   **Block Table (中间)**: 类似于操作系统的页表 (Page Table)。它记录了 `Logical Block 0 -> Physical Block 7` 这样的映射关系。
+> *   **Physical KV Blocks (右侧)**: 在显存 (HBM) 中实际存储数据的地方。注意这些物理块是**完全离散**的，哪里有空位就插哪里。
+> *   **动态分配**: 当生成新 Token 需要空间时，vLLM 只需要在显存中找一个空闲物理块，填入数据，并更新 Block Table。**没有任何内存需要预留，也没有内存空洞（碎片）。**这是 vLLM 能够支持超大 Batch Size 的根本原因。
 
 ---
 
