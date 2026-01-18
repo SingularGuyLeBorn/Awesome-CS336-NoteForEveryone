@@ -4,28 +4,6 @@
 
 ---
 
-## 编辑蓝图 (Editorial Blueprint)
-
-```
---- EDITORIAL BLUEPRINT ---
-精英链接笔记 (创建独立文件, 总数不超过5个):
-  - **Common Crawl 与网络爬虫** [理由: 是几乎所有预训练数据的来源, 涉及技术细节(WARC/WET/HTML转换)和政策(robots.txt)]
-  - **版权法与 Fair Use** [理由: 课堂详细讲解, 是数据合法使用的核心法律框架, 影响行业实践]
-  - **DCLM 与模型基质量过滤** [理由: 代表当前数据处理的前沿方法, 打破了"避免模型偏见"的旧范式]
-
-正文内详述概念 (仅在正文加粗, 不创建链接):
-  - 训练阶段: Pre-training / Mid-training / Post-training
-  - 早期数据集: BooksCorpus, Wikipedia, WebText
-  - CCNet / C4 / GPT-3 数据集 / The Pile
-  - MassiveText (Gopher) / LLaMA 数据集 / RefinedWeb / FineWeb
-  - Dolma / Nemotron-CC
-  - 中期训练: Long Context Extension
-  - 后期训练: Supernatural Instructions, Flan, Alpaca, Vicuna
---- END OF BLUEPRINT ---
-```
-
----
-
 ## 0. 课程开场: 数据是最重要的
 
 > **讲师 Hot Take**: 数据是训练语言模型最重要的事情.
@@ -41,6 +19,7 @@
 > "We create our dataset from a variety of data sources containing knowledge until the end of 2023."
 
 **保密原因**:
+
 1. **竞争动态**: 数据是核心竞争力
 2. **版权责任**: 不想被起诉
 
@@ -50,13 +29,14 @@
 
 数据工作贯穿训练的各个阶段, 但侧重点不同:
 
-| 阶段 | 数据特点 | 目标 |
-|---|---|---|
-| **Pre-training (预训练)** | 大量低质量原始数据 (通常来自网络) | 获得广泛的语言能力 |
-| **Mid-training (中期训练)** | 较小量高质量数据 (如数学、代码、长上下文) | 增强特定能力 |
-| **Post-training (后期训练)** | 指令跟随数据、对话数据、RLHF | 使模型可对话、安全 |
+| 阶段                               | 数据特点                                  | 目标               |
+| ---------------------------------- | ----------------------------------------- | ------------------ |
+| **Pre-training (预训练)**    | 大量低质量原始数据 (通常来自网络)         | 获得广泛的语言能力 |
+| **Mid-training (中期训练)**  | 较小量高质量数据 (如数学、代码、长上下文) | 增强特定能力       |
+| **Post-training (后期训练)** | 指令跟随数据、对话数据、RLHF              | 使模型可对话、安全 |
 
 **术语**:
+
 - **Base Model (基础模型)**: Pre-training + Mid-training 后的模型
 - **Instruct Model (指令模型)**: Post-training 后的模型
 
@@ -92,11 +72,13 @@
 ### 2.1 BERT (2018): Books + Wikipedia
 
 **BooksCorpus**:
+
 - 来源: Smashwords (2008 年成立的自出版平台)
 - 内容: 7,000 本免费自出版书籍
 - 现状: 因违反服务条款已被下架
 
 **Wikipedia**:
+
 - 2001 年成立, 目前 6200 万篇文章, 329 种语言
 - **不包含原创思想**: 无观点、无个人网页
 - **基于可查证性**: 需要可靠来源
@@ -109,6 +91,7 @@
 **核心思路**: Web 很大但质量低, 如何快速获得高质量子集?
 
 **方法**: 利用 Reddit 作为"质量过滤器"
+
 - 收集 Reddit 帖子中 **karma ≥ 3** 的外链
 - 结果: 800 万页面, 40GB 文本
 
@@ -119,11 +102,13 @@
 **[深入探讨: Common Crawl 与网络爬虫](./Lecture13-Common-Crawl.md)**
 
 **基本概况**:
+
 - 2007 年成立的非营利组织
 - 每月进行一次网络爬虫, 至今已有 ~100 次
 - 最新爬虫: 2025 年 4 月
 
 **两种格式**:
+
 - **WARC**: 原始 HTTP 响应 (如 HTML)
 - **WET**: 转换为纯文本 (有损过程)
 
@@ -140,6 +125,7 @@
 **目标**: 自动构建大规模高质量多语言数据集
 
 **流程**:
+
 1. **去重**: 基于轻量级规范化移除重复段落
 2. **语言识别**: fastText 分类器, 只保留目标语言
 3. **质量过滤**: 保留在 **KenLM 5-gram 模型**下看起来像 Wikipedia 的文档
@@ -149,6 +135,7 @@
 ### 2.5 T5 / C4 (2019): 规则过滤
 
 **C4 (Colossal Clean Crawled Corpus)**:
+
 - 从一个 Common Crawl 快照 (2019 年 4 月) 开始: 1.4T tokens
 - **纯规则过滤** (无模型):
   - 保留以标点结尾、≥5 词的行
@@ -159,6 +146,7 @@
 - 结果: 806 GB (156B tokens)
 
 **规则 vs 模型过滤的权衡**:
+
 - **规则**: 更广泛 (非 Wikipedia 风格的好句子也能保留), 但可能包含垃圾
 - **模型**: 更精准, 但只能复制"正例"的分布
 
@@ -191,6 +179,7 @@
 ### 2.8 MassiveText / Gopher (2021): 规则主导
 
 **MassiveWeb** 过滤:
+
 - 只保留英语
 - **手动规则**过滤 (如: 80% 的词至少包含一个字母字符)
 - **Google SafeSearch** 过滤毒性 (非词表)
@@ -209,6 +198,7 @@
 - **总计**: 1.2T tokens
 
 **复制版本**:
+
 - **RedPajama v1** (Together): 开源复制
 - **SlimPajama** (Cerebras): 去重后的 627B 子集
 
@@ -217,12 +207,14 @@
 **论点**: 如果过滤做得好, **只需要网络数据**.
 
 **方法**:
+
 - trafilatura 提取 (WARC 而非 WET)
 - Gopher 规则过滤, **避免 ML 过滤**以避免偏见
 - MinHash 模糊去重
 - **结果**: 5T tokens (发布 600B)
 
 **FineWeb** (HuggingFace): RefinedWeb 的改进版
+
 - 95 个 Common Crawl 快照
 - Gopher + C4 规则
 - PII 匿名化
@@ -249,6 +241,7 @@
 ![DCLM 过滤流程](images/dclm-filter.png)
 
 **模型过滤方法**:
+
 - **正例** (20 万): OpenHermes-2.5 (GPT-4 生成的指令数据) + ELI5 (Reddit 子版块)
 - **负例** (20 万): RefinedWeb 随机样本
 - 训练 **fastText 分类器**
@@ -262,6 +255,7 @@
 **问题**: DCLM 过滤太激进 (240T → 3.8T). 想要更多 Token!
 
 **方法**:
+
 1. **HTML → 文本**: 使用 jusText (而非 trafilatura), 因为保留更多 Token
 2. **分类器集成**:
    - Nemotron-340B 评分教育价值, 蒸馏到快速模型
@@ -295,18 +289,21 @@
 ### 3.2 如何合法使用版权作品
 
 **方式一: 获得许可 (License)**
+
 - 签订合同 (如 Google-Reddit, OpenAI-Shutterstock)
 - Creative Commons 许可 (如 Wikipedia, Khan Academy)
 
 **方式二: 援引 Fair Use**
 
 四个因素:
+
 1. **使用目的**: 教育 > 商业, 变革性 > 复制性
 2. **作品性质**: 事实性 > 虚构性
 3. **使用量**: 片段 > 全部
 4. **市场影响**: 不替代原作品
 
 **LLM 训练的挑战**:
+
 - 复制数据 (训练第一步) 本身**可能已违规**, 即使你什么都不做
 - 可以论证 ML 训练是**变革性**的
 - ML 系统关心的是**想法** (如停车标志), 而非**表达** (某张图的艺术选择)
@@ -325,6 +322,7 @@
 ### 4.1 长上下文扩展 (Long Context)
 
 **需求**:
+
 - DeepSeek v3: 128K tokens
 - Claude 3.5: 200K tokens
 - Gemini 1.5 Pro: 1.5M tokens
@@ -332,6 +330,7 @@
 **问题**: Transformer 与序列长度呈**二次方**关系, 预训练阶段不高效.
 
 **解决**: 在 Mid-training 阶段添加长上下文能力
+
 - **数据来源**: 书籍 (PG-19), 数学证明 (Proof-Pile)
 - **技术**: Shifted sparse attention, Positional interpolation
 
@@ -340,10 +339,12 @@
 **思路**: 将传统 NLP 数据集转换为 Prompt 格式
 
 **Super-Natural Instructions (2022)**:
+
 - 1,600+ 任务, 社区贡献
 - 微调 T5 → Tk-Instruct
 
 **Flan (2022-2023)**:
+
 - 1,800+ 任务
 - Zero-shot, Few-shot, Chain-of-Thought 版本
 
@@ -352,34 +353,42 @@
 ### 4.3 指令遵循与对话数据
 
 **Alpaca (2023)**:
+
 - 使用 **Self-Instruct** 从 text-davinci-003 生成 52K 示例
 - 微调 LLaMA 7B
 
 **Vicuna**:
+
 - 使用 ShareGPT (用户分享的 ChatGPT 对话, 已废弃) 的 70K 对话
 - 微调 LLaMA
 
 **Baize**:
+
 - GPT-3.5 自我对话 (以 Quora/StackOverflow 问题为种子)
 - 111.5K 示例
 
 **WizardLM**:
+
 - **Evol-Instruct**: 让问题"进化"以增加难度/广度
 
 **MAmmoTH2**:
+
 - 从 Common Crawl 中用 fastText 识别"测验网站"
 - 用 GPT-4/Mixtral 提取 QA 对
 - 10M 指令
 
 **OpenHermes 2.5**:
+
 - 多个数据集的聚合
 - 1M GPT-4 生成的示例
 
 **Llama 2 Chat**:
+
 - 27,540 条**人工标注**的高质量指令
 - 声称优于使用数百万开源示例
 
 **Llama-Nemotron Post-training (2024)**:
+
 - 从公开数据集 (WildChat 等) 或合成生成 Prompt
 - 使用 Llama, Mixtral, DeepSeek R1, Qwen 生成回复 (商业可用, 不像 GPT-4)
 - 包含推理轨迹
@@ -389,13 +398,11 @@
 ## 5. 总结: 核心要点
 
 1. **数据不会从天上掉下来**: 需要大量工作获取
+
    - **Live Service → Raw Dump → Processed Data**
    - 涉及转换、过滤、去重
-   
 2. **数据是区分语言模型的关键**: 架构已趋同, 数据决定质量
-
 3. **法律和伦理问题**: 版权、隐私、服务条款
-
 4. **目前一切都是启发式的**: 大量机会改进!
 
 ---
