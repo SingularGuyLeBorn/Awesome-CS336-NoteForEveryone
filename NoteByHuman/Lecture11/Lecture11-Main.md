@@ -1,179 +1,457 @@
-# Lecture 11: Scaling - Case Study and Details
+# Lecture 11: 如何用好 Scaling Law (Scaling Case Studies & μP)
 
-**课程:** CS336
-**讲师:** 
-**主题:** 大模型 Scaling 的最佳实践：案例研究与 muP 详解
-
----
-
-## 1. 引言：Scaling 的现状与挑战
-
-上一讲我们讨论了 **Chinchilla Scaling Laws**，建立了关于模型参数量与训练数据量之间权衡的理论基础。然而，在 ChatGPT 爆发后，前沿实验室（如 OpenAI, Anthropic）对 Scaling 的细节变得讳莫如深。
-
-今天的核心动机是回答一个实际问题：**在实践中 Scaling 一个大模型的最佳范式是什么？**
-
-这就引出了一系列需要验证的问题：
-
-* Chinchilla 的方法在实际操作中真的有效吗？
-* 如果在对数坐标图上拟合 IsoFlops 曲线，它真的能告诉我们正确的 Token 权衡吗？
-* 我们可以利用 Scaling Laws 来设定最优学习率（Learning Rate）吗？
-* 我们是否应该选择特定的架构或参数化方法（Parametrization）来确保模型能够平滑地 Scaling？
-
-由于缺乏西方顶尖实验室的公开数据，本讲座将深入剖析几个**公开且执行力极高**的 Scaling 案例，主要来自中国的研究团队（DeepSeek, MiniCPM）以及 Cerebras。它们代表了 2023-2025 年间 Scaling 研究的“黄金标准”。
+**主讲人**: CS336 Instructor
+**核心议题**: Scaling Law 的工程实践、案例研究（Cerebras-GPT, MiniCPM, DeepSeek）、WSD 学习率调度、μP (Maximal Update Parametrization) 的数学推导与实证验证。
 
 ---
 
-## 2. 案例研究：Scaling 在现实世界中的应用
+## 1. 引言：为什么需要 Scaling Law？
 
-我们将重点分析三个模型：**Cerebras-GPT**、**MiniCPM** 和 **DeepSeek (V1)**。此外，还会简要提及 **Llama 3**、**Hunyuan Large** 和 **Minimax 01** 的相关发现。
+上一讲我们探讨了 Scaling Law 的理论基础，特别是 Chinchilla 论文提出的计算最优比例（约 20:1 的 Token/Parameter 比）。然而，在实际工程中，我们面临着更复杂的问题：
 
-### 2.1 Cerebras-GPT (2023)
+> **核心疑问**: Chinchilla 的方法真的有效吗？在 Log-Log 图上拟合曲线真的能指导大模型训练吗？
 
-Cerebras 团队发布了从 111M 到 13B 参数的一系列模型，完全遵循 Chinchilla 的配方（即 Token 数约为参数量的 20 倍）。
+![Motivation](images/01_motivation.png)
 
-* **核心发现**：他们引入了 **Maximal Update Parametrization (muP)** 来稳定 Scaling 过程。
-* **muP 的优势**：
-  * 在传统的参数化（Standard Parametrization, SP）下，随着模型变大，最优学习率会发生显著漂移（通常需要变小），导致大模型训练初期容易出现震荡（Oscillations），难以精确预测 Scaling 曲线。
-  * 使用 **muP** 后，他们发现 Scaling 曲线更加平滑，且更贴近理论预测。最重要的是，**最优超参数（特别是学习率）在不同规模的模型间保持了惊人的稳定性**。
+具体来说，我们需要回答：
+1. **IsoFLOP 分析**可靠吗？能否真正指导 Token/Parameter 的权衡？
+2. 能否用 Scaling Law 来设置**最优学习率**？
+3. 应该选择什么样的**架构或参数化方法**来实现稳定的缩放？
 
-`![Cerebras-GPT 损失曲线对比](placeholder.png)`
-`**[插入图片: lecture_11.pdf, 第6页, 图表, 描述: 展示 Standard Parametrization (蓝色) 与 muP (橙色) 在 Pile 数据集上的测试损失。蓝色曲线在 Scaling 时表现出震荡，而 muP 曲线非常平滑且紧贴 Scaling Law 预测线。]**`
+### 1.1 后 Chinchilla 时代的竞争格局
 
-* **实施策略**：
-  * 他们采取了**激进的小规模代理（Proxy）搜索**策略。在 40M 参数的小模型上进行详尽的超参数搜索（网格搜索），找到最优值。
-  * 利用 muP 的特性，直接将这些超参数（如学习率）迁移到大模型上，无需重新搜索。
+自 Chinchilla 论文发表及 ChatGPT 爆发以来，前沿实验室对 Scaling 细节变得**讳莫如深**。讲师提到，他曾向前沿实验室的人询问 Scaling 策略，得到的回答是："我们绝对不会告诉你任何关于 Scaling 的事情。"
 
-### 2.2 MiniCPM (2024)
+因此，我们转向那些公开了详细 Scaling 研究的"半生产级"模型：
+- **Cerebras-GPT** (2023)
+- **MiniCPM** (2024, 面壁智能)
+- **DeepSeek LLM** (2024, 深度求索)
 
-MiniCPM 是由清华大学团队（ModelBest）发布的高性能小模型（1.2B - 2.4B）。他们的目标是用大量的计算资源训练出极高质量的小模型。
+此外，还有一些新近发布的模型提供了部分 Scaling 信息：
+- **Llama 3** (Meta, 2024)
+- **Hunyuan Large** (腾讯, MoE 模型)
+- **MiniMax-01** (混合线性注意力模型)
 
-* **Scaling 策略**：
-  1. 同样使用 **muP** 来稳定初始化和学习率，确保超参数可迁移。
-  2. 固定模型的长宽比（Aspect Ratio），只调整整体模型大小。
-  3. **WSD (Warmup-Stable-Decay) Learning Rate Scheduler**：这是他们推广的一项重要技术。
-
-`![WSD 学习率调度示意图](placeholder.png)`
-`**[插入图片: lecture_11.pdf, 第18页, 图15, 描述: 左侧展示了标准的 Cosine 学习率曲线（黄色）与 WSD 曲线（绿色）的对比。WSD 包含 Warmup、一个长且平坦的 Stable 阶段，以及最后的急剧 Decay 阶段。]**`
-
-* **WSD 与 Chinchilla 分析**：
-
-  * 传统的 **Cosine** 调度一旦设定了目标 Token 数，其衰减曲线就固定了，无法中途改变。要测试不同数据量的效果，必须从头训练多次（$N^2$ 成本）。
-  * **WSD** 允许模型在 Stable 阶段一直训练。如果想知道“如果只训练 60% 的数据会怎样？”，只需将模型回退（Rewind）到该点，然后执行一个快速的 Decay 阶段即可。这使得**在一次主训练过程中完成多组 Chinchilla 数据点采样**成为可能。**[深入探讨: WSD (Warmup-Stable-Decay) 学习率调度策略](./Lecture11-WSD-Scheduler.md)**
-* **拟合结果 (Method 3)**：
-
-  * 他们使用联合拟合（Joint Fit）方法，得出了一个极高的数据/参数比：**192 tokens per parameter**。这远高于 Chinchilla 的 20:1。
-  * 虽然 192:1 可能是一个异常值（Outlier），但这强烈暗示了**随着优化水平的提高，我们应该在比 Chinchilla 建议的更多的数据上训练模型**。
-
-`![MiniCPM 临界 Batch Size 分析](placeholder.png)`
-`**[插入图片: lecture_11.pdf, 第14页, 图表, 描述: 展示不同模型尺寸下，Loss 与 Batch Size 的关系。红线标出了每个数据规模下的最优（临界）Batch Size，呈现出随着 Loss 降低，最优 Batch Size 多项式级增加的趋势。]**`
-
-### 2.3 DeepSeek LLM (2024)
-
-DeepSeek (V1) 在 7B 和 67B 模型上展示了极高的 Scaling 分析水平。
-
-* **策略差异**：
-  * DeepSeek **没有使用 muP**。
-  * 他们采用“暴力”但科学的方法：直接在大、小两个尺度上对 **Batch Size** 和 **Learning Rate** 进行网格搜索。
-  * 他们发现最优 Batch Size 和 Learning Rate 与计算量（Compute）之间存在 Scaling Law 关系，并直接拟合这些曲线来预测大模型的超参数。
-
-`![DeepSeek 学习率 Scaling 分析](placeholder.png)`
-`**[插入图片: lecture_11.pdf, 第29页, 图(b), 描述: 展示 DeepSeek 拟合的最优学习率 Scaling 曲线。虽然讲师认为该拟合线略显牵强（点有些重叠），但 DeepSeek 确实以此确定了大模型的学习率。]**`
-
-* **Chinchilla 复现**：
-  * 他们也使用了 WSD 风格的调度器（虽然是分段阶梯式衰减）来高效获取数据。
-  * 他们精确地复现了 IsoFlops 分析，展示了完美的预测能力——利用小规模实验准确预测了 7B 和 67B 模型的最终 Loss。
-
-### 2.4 其他模型简述
-
-* **Llama 3 (2024)**: 复现了 IsoFlops 分析，得出了约 **39:1** 的 Token-Parameter 比例。更重要的是，他们尝试建立 **Log Loss (Perplexity)** 与 **下游任务准确率 (Downstream Accuracy)** 之间的关联，以便直接针对任务性能进行 Scaling。
-* **Hunyuan Large (2024)**: 针对 MoE (Mixture of Experts) 模型进行了 Scaling 分析，得出了 **96:1** 的 Data-to-Active Parameter 比例。
-* **Minimax 01 (2025)**: 这是一个线性 Attention（Linear Attention）模型。他们利用 Scaling Law 证明了 Linear Attention 和 Hybrid 架构在 Scaling 趋势上与标准 Softmax Attention 一致，从而验证了长上下文架构的可行性。
+> **讲师评价**: 至今为止，MiniCPM 和 DeepSeek 仍然是我们拥有的**最详细的公开 Scaling 研究**。
 
 ---
 
-## 3. 深度解析：Maximal Update Parametrization (muP)
+## 2. 案例研究：Cerebras-GPT
 
-通过案例我们看到，能够跨越规模迁移超参数（Scale-Invariant Hyperparameters）是 Scaling 的圣杯。**muP** 旨在通过特定的参数化方式，使得最优学习率在模型宽度（Width）变化时保持不变。
+### 2.1 概览
 
-### 3.1 muP 的核心思想与推导
+Cerebras-GPT 是一系列从 **111M 到 13B** 参数的模型，使用 Chinchilla 比例（约 20:1 Token/Parameter）进行训练。
 
-muP 的推导基于两个核心的**谱条件 (Spectral Conditions)**，或者说关于量级的断言（Assertion）：
+![Cerebras Overview](images/03_cerebras_overview.png)
 
-1. **条件 A1 (初始化稳定性)**: 随着模型宽度 $n$ 增加，激活值（Activations）的坐标级数值应保持 $O(1)$，不应爆炸也不应消失。
-2. **条件 A2 (更新稳定性)**: 在进行一步梯度下降后，激活值的**变化量**（Change in Activation, $\Delta h$）也应保持 $O(1)$。
+**核心发现**: 使用 **μP (Maximal Update Parametrization)** 可以显著提高 Scaling 的稳定性和可预测性。
 
-#### 推导 A1：初始化 (Initialization)
+### 2.2 μP vs 标准参数化 (SP)
 
-考虑一个简单的深度线性网络 $h_l = W_l h_{l-1}$。
-假设 $W_l$ 初始化为高斯分布 $N(0, \sigma^2)$。根据随机矩阵理论，矩阵的算子范数（Operator Norm） $\|W_l\|_*$ 会集中在 $\sigma \cdot \sqrt{n}$ 附近。
+下图展示了使用标准参数化 (SP) 和 μP 的模型在测试 Loss 上的对比：
 
-为了保持激活值的范数 $\|h_l\|_2 \approx \sqrt{n}$ （即坐标级为 $O(1)$），我们需要：
+![Cerebras Scaling Comparison](images/04_cerebras_scaling_comparison.png)
 
-$$
-\|h_l\|_2 \approx \|W_l\|_* \|h_{l-1}\|_2
-$$
+> **关键观察**:
+> - **蓝色 (SP)**: 标准参数化下，Loss 曲线与预测值有较大偏离（振荡）
+> - **橙色 (μP)**: μP 下的 Loss 曲线更接近拟合的 Scaling Law 预测线
+> - μP 的表现**不亚于甚至优于** Pythia 和 GPT-J
 
-代入 $\sqrt{n}$ 的归纳假设，我们需要 $\|W_l\|_* \approx 1$。
-因此，我们需要设置初始化的方差 $\sigma$ 为：
+### 2.3 μP 参数表
 
-$$
-\sigma \propto \frac{1}{\sqrt{n}}
-$$
+如果你想实现 μP，Cerebras-GPT 论文附录提供了一个清晰的参数对照表：
 
-这与标准的 **He/Kaiming Initialization** 是一致的（$1/\sqrt{\text{fan-in}}$）。
+![Cerebras muP Table](images/05_cerebras_mup_table.png)
 
-#### 推导 A2：学习率与更新 (Learning Rate & Updates)
+**核心规则** (与标准参数化对比):
+1. **初始化**: 所有非 Embedding 层的权重按 $1/\text{width}$ 缩放
+2. **学习率**: 每层的学习率按 $1/\text{width}$ 缩放
 
-这是 muP 与标准参数化（SP）分道扬镳的地方。
-考虑 SGD 更新 $\Delta W_l = -\eta \nabla_{W_l} \ell$。
-权重的更新量 $\Delta W_l$ 会导致激活值的变化 $\Delta h_l$。我们需要 $\Delta h_l$ 的量级为 $O(\sqrt{n})$（与激活值本身同级）。
+### 2.4 小规模超参数搜索
 
-推导过程涉及分析 $\Delta h_l = W_l \Delta h_{l-1} + \Delta W_l h_{l-1}$ 等项。
-关键结论是，为了满足条件 A2，**学习率 $\eta$ 必须随着宽度的变化而缩放**。
+Cerebras 的策略是：
+1. 将模型缩小到 **40M** 参数的代理模型
+2. 在小规模上进行**大范围超参数搜索**
+3. 借助 μP 保持超参数稳定，然后直接 Scale Up
 
-* **对于 SGD**: 推导结果显示 $\eta \propto \frac{n_{out}}{n_{in}}$。对于 Transformer 这种宽度均匀的网络，这意味着学习率应为常数 $O(1)$。
-* **对于 Adam**: 推导结果显示，由于 Adam 的自适应特性，学习率应缩放为：
-  $$
-  \eta_{\text{Adam}} \propto \frac{1}{n}
-  $$
-
-  即学习率应随宽度的增加而线性减小。
-
-**注意**：在标准参数化（SP）中，我们通常对所有层使用全局常数学习率。而在 muP 中，不同类型的层（如 Embedding, Hidden, Readout）可能有不同的缩放规则。
-
-`![muP 与标准参数化对比表](placeholder.png)`
-`**[插入图片: lecture_11.pdf, 第8页, 表格, 描述: 详细对比了 Standard Parametrization (SP) 和 Maximal Update (muP) 在初始化方差、学习率缩放上的区别。关键点：muP 中 AdamW 学习率随宽度 (1/width) 缩放，初始化方差为 (1/width)。]**`
-
-**[深入探讨: Maximal Update Parametrization (muP) 理论与推导](./Lecture11-muP-Theory.md)**
-
-### 3.2 实证分析：muP 真的有效吗？
-
-我们参考一篇名为 "A Large-Scale Exploration of $\mu$-Transfer" 的论文进行验证。
-
-1. **有效性**：在宽度 Scaling 实验中（128 -> 2048），muP 确实使得最优学习率保持在一个非常稳定的区间（Base LR 约为 $2^{-6}$），而 SP 模型的学习率则需要不断调整，否则 Loss 会变得极差。
-2. **muP 的鲁棒性（什么会打破 muP？）**：
-
-   * **Robust (有效)**:
-     * **非线性激活函数**: SwiGLU, Squared ReLU。
-     * **Batch Size**: 增大或减小 Batch Size 不影响 muP 的 Scaling 规律。
-     * **初始化变体**: Zero Query Init 等。
-   * **Not Robust (失效)**:
-     * **RMSNorm with Learnable Gains**: 如果 RMSNorm 包含可学习的增益参数（Gain），muP 会失效。**必须移除 Gain 或将其初始化行为特殊处理**。
-     * **Exotic Optimizers**: 如 **Lion** 优化器（基于符号的梯度更新），muP 无法直接迁移。
-     * **Strong Weight Decay**: 极强的权重衰减（如 0.1）会导致 muP 失效。
-
-`![muP 鲁棒性消融实验](placeholder.png)`
-`**[插入图片: lecture_11.pdf, 第51页, 表格, 描述: 展示 RMSNorm Gains 导致 muP 迁移失效的数据。表格显示带有可学习 Gains 的模型在不同宽度下最优学习率不再对齐（标红的叉）。]**`
+![Cerebras HP Search](images/06_cerebras_hp_search.png)
 
 ---
 
-## 4. 总结：Scaling in the Wild
+## 3. 案例研究：MiniCPM
 
-在 2025 年的视角下，训练大模型的 Scaling 最佳实践可以总结为以下几点：
+### 3.1 概览
 
-1. **超参数稳定性**：使用 **muP**（或类似的元参数化方法 Meta-P）是一个强有力的工具，它允许你在小模型上调试超参数，然后放心地扩展到大模型。主要关注点是初始化（$1/\sqrt{n}$）和每层学习率的缩放（Adam 下为 $1/n$）。
-2. **数据 Scaling**：**WSD Scheduler** 是目前的行业首选。它不仅性能与 Cosine 相当，更重要的是它提供了“免费”的 Scaling Law 数据点收集能力（通过 Rewind），极大地降低了研究计算成本。
-3. **Scaling Laws 的拟合**：
-   * **IsoFlops 分析**仍然是确定模型大小与数据量权衡的黄金标准。
-   * 不要迷信 Chinchilla 的 20:1 比例。最新的模型（Llama 3, MiniCPM）显示，在更高的数据比例（40:1 甚至 100+:1）下训练往往更加划算，特别是考虑到推理成本时。
-4. **实战心态**：像 DeepSeek 那样，即使不使用 muP，也要通过网格搜索和严谨的曲线拟合来确定 Batch Size 和 Learning Rate 的 Scaling 趋势。不要盲目猜测大模型的超参数。
+MiniCPM 的目标是训练**高质量的小型模型** (1.2B - 2.4B 参数)，但投入大量计算进行优化。
+
+![MiniCPM Overview](images/07_minicpm_overview.png)
+
+> **性能表现**: 在发布时，MiniCPM 在其参数量级别上表现优异，1.2B/2.4B 模型击败了当时大多数 2B 模型，甚至匹配了许多 7B 模型。
+
+### 3.2 MiniCPM 的 μP 实现
+
+MiniCPM 同样采用 μP 来稳定超参数：
+
+![MiniCPM muP Params](images/08_minicpm_mup_params.png)
+
+**参数设置**:
+- Embedding 层: 普通缩放
+- 残差连接 (MLP): 按 $\sqrt{\text{num\_layers}}$ 缩放
+- 初始化: $1/\text{base\_width}$ (fan-in)
+- 学习率: 同样按 width 缩放
+
+### 3.3 Critical Batch Size 分析
+
+与 Kaplan 论文一致，MiniCPM 团队研究了**临界 Batch Size**（收益递减点）与目标 Loss 的关系：
+
+![MiniCPM Batch Size](images/09_minicpm_batch_size.png)
+
+> **结论**: 目标 Loss 越低（模型越强），可以使用的 Batch Size 越大。这与 Kaplan 论文的结论一致。
+
+### 3.4 学习率稳定性验证
+
+下图展示了不同模型规模下的学习率扫描结果：
+
+![MiniCPM LR Stability](images/10_minicpm_lr_stability.png)
+
+> **关键观察**:
+> - 浅色线代表小模型，深色线代表大模型
+> - **最优学习率位置保持不变**（约 $10^{-2}$）
+> - 这证明了 μP 的有效性：正确的初始化和每层学习率缩放可以避免反复调参
+
+---
+
+## 4. WSD 学习率调度 (Warm-up Stable Decay)
+
+### 4.1 问题：Cosine 调度的局限
+
+传统的 **Cosine 学习率调度** 有一个问题：不同的数据量目标需要不同的 Cosine 曲线。
+
+![WSD Schedule](images/11_wsd_schedule.png)
+
+> **核心问题**: 如果我想做 Chinchilla 风格的数据缩放分析，需要训练多个不同数据量的模型。使用 Cosine 时，**无法复用**中间检查点，因为每个数据量目标对应的 Cosine 曲线不同。这导致需要 $O(n^2)$ 次训练。
+
+### 4.2 WSD 的解决方案
+
+**WSD (Warm-up Stable Decay)** 是一种梯形学习率调度：
+1. **Warm-up Phase**: 与 Cosine 相同的预热阶段
+2. **Stable Phase**: 学习率保持**恒定**（平台期）
+3. **Decay Phase**: 快速冷却到最小学习率
+
+> **优势**: Stable Phase 是平的！这意味着你可以在一次训练运行中，通过在不同时间点"回退到 Stable Phase 的某个检查点 + Decay"来模拟不同数据量的训练结果。
+>
+> **复杂度**: $O(n)$，而非 Cosine 的 $O(n^2)$
+
+### 4.3 WSD vs Cosine 的 Loss 曲线
+
+![WSD vs Cosine](images/12_wsd_vs_cosine.png)
+
+> **曲线解读**:
+> - **黄色 (Cosine)**: 平滑下降
+> - **深色 (WSD)**: 在 Stable Phase 平稳下降，进入 Decay Phase 后 **Loss 急剧下降**
+> - **结论**: 在每个 Token 数量点上，WSD 的最终性能与 Cosine **相当甚至更好**
+
+**关于 Cooldown 的重要性**: 讲师强调，Decay Phase 是获得大部分 Loss 收益的关键阶段。如果不进行 Cooldown，Loss 会高得多。优化器和学习率设计的核心就是在"保持高学习率以远离初始化点"和"良好衰减以压低 Loss"之间取得平衡。
+
+### 4.4 MiniCPM 的 Chinchilla 复现
+
+借助 WSD，MiniCPM 团队以极低的成本完成了 Chinchilla 分析（Method 1 和 Method 3）：
+
+![MiniCPM Chinchilla](images/13_minicpm_chinchilla.png)
+
+**惊人发现**: MiniCPM 拟合出的最优 Token/Parameter 比高达 **192:1**，远超 Chinchilla 的 20:1！
+
+> **讲师评价**: 这个数字非常高，我没见过其他人得出过这个结论。但这至少说明，**20:1 只是一个起点**，我们完全可以大幅增加数据量。
+
+---
+
+## 5. 案例研究：DeepSeek LLM
+
+### 5.1 概览
+
+DeepSeek LLM (7B & 67B) 是 2024 年初发布的模型，在当时的开源模型中表现顶尖（匹配 Llama 2 和 Mistral）。
+
+![DeepSeek Overview](images/14_deepseek_overview.png)
+
+> **讲师评价**: 如果你读过 DeepSeek LLM 的论文，你会知道这些人是**非常严肃的科学家**。他们做了大量仔细的 Scaling 消融实验，这种态度是所有成功进行 Scaling 的团队的共同特点。
+
+### 5.2 DeepSeek 的不同策略：不使用 μP
+
+与 Cerebras-GPT 和 MiniCPM 不同，DeepSeek **不使用 μP**，而是直接通过 Scaling Law 拟合来确定最优 Batch Size 和 Learning Rate。
+
+![DeepSeek LR BS Grid](images/15_deepseek_lr_bs_grid.png)
+
+**方法**:
+1. 在两个相对小规模的模型上进行 Batch Size 和 Learning Rate 的网格搜索
+2. 记录每个规模下的最优值
+3. 在不同 FLOP 规模上重复此过程
+4. 拟合 Scaling Law 来外推大模型的最优值
+
+### 5.3 Batch Size 和 Learning Rate 的 Scaling
+
+![DeepSeek Scaling Fit](images/16_deepseek_scaling_fit.png)
+
+> **讲师观点**: Batch Size 的 Scaling Law 看起来比较清晰（左图）。Learning Rate 的拟合（右图）"看起来有点可疑"，我甚至觉得画一条水平线可能也说得过去。但他们确实这样做了并取得了成功。
+>
+> **一个广泛的教训**: Chinchilla 风格的 IsoFLOP 分析通常拟合得非常漂亮，而超参数的 Scaling Law 往往看起来更嘈杂。
+
+### 5.4 DeepSeek 的 WSD 实现
+
+DeepSeek 同样采用了 WSD 调度，但有一点不同：他们使用了**两阶段 Decay**（约 10% + 10%）。
+
+![DeepSeek WSD](images/17_deepseek_wsd.png)
+
+> 研究表明，Decay 阶段占总计算预算的比例（如 20%）并不敏感。
+
+### 5.5 DeepSeek 的 Chinchilla 复现
+
+![DeepSeek IsoFLOP](images/18_deepseek_isoflop.png)
+
+DeepSeek 从零开始重新进行了 Chinchilla 分析，而不是简单地"Cargo Cult" 20:1 的比例。
+
+> **讲师评价**: 我觉得这非常好。他们本可以直接采用 Chinchilla 的结论，但他们选择自己验证。这种严谨的态度值得学习。
+
+### 5.6 预测验证
+
+最终，DeepSeek 在 7B 和 67B 模型上验证了他们的 Scaling Law 预测：
+
+![DeepSeek Prediction](images/19_deepseek_prediction.png)
+
+> **关键点**: 他们能够从 $10^{20}$ FLOP 的小规模实验外推到 $10^{24}$ FLOP 的大规模训练，并**准确预测最终 Loss**。这是 Scaling Law 的核心价值。
+
+---
+
+## 6. 新近模型的 Scaling 研究简述
+
+### 6.1 Llama 3
+
+Llama 3 重新进行了 IsoFLOP 分析，得出的最优比例约为 **39:1**（高于 Chinchilla 的 20:1）。
+
+![Llama 3 IsoFLOP](images/20_llama3_isoflop.png)
+
+此外，Llama 3 尝试将 Perplexity 与下游任务的准确率关联起来（通过拟合 Sigmoid 曲线）。
+
+![Llama 3 Downstream](images/21_llama3_downstream.png)
+
+### 6.2 Hunyuan Large (MoE)
+
+腾讯的 Hunyuan Large 是一个 MoE 模型。他们针对 MoE 架构重新进行了 Chinchilla 分析，得出的比例约为 **96:1**（Token / Active Parameter）。
+
+![Hunyuan IsoFLOP](images/22_hunyuan_isoflop.png)
+
+> **备注**: MoE 的比例与 Dense 模型不同，这很正常。
+
+### 6.3 MiniMax-01 (线性注意力)
+
+MiniMax-01 是一个混合架构（Softmax Attention + Linear Attention）。他们的 Scaling 研究旨在证明 Linear Attention 的性能与 Softmax Attention **相当**。
+
+![MiniMax Scaling](images/23_minimax_scaling.png)
+
+> **评价**: 这种用 Scaling Law 来验证架构选择的做法，在 Mamba 等论文中也很常见，但 MiniMax 是少数在大规模生产模型上这样做的。
+
+### 6.4 案例研究总结
+
+![Case Study Summary](images/24_case_study_summary.png)
+
+| 模型 | μP | WSD | Chinchilla 复现 | 其他 |
+|---|---|---|---|---|
+| Cerebras-GPT | ✓ | - | - | 首次公开验证 μP |
+| MiniCPM | ✓ | ✓ | ✓ (192:1) | 普及 WSD |
+| DeepSeek | ✗ | ✓ | ✓ | 直接拟合 LR/BS Scaling |
+| Llama 3 | ? | ? | ✓ (39:1) | Loss → Accuracy 映射 |
+| Hunyuan | ? | ? | ✓ (96:1 for MoE) | MoE 特定分析 |
+| MiniMax | ? | ? | ✓ (Method 1) | 验证线性注意力 |
+
+---
+
+## 7. μP 的数学推导
+
+### 7.1 核心思想
+
+> **目标**: 随着模型宽度 ($n$) 增加，我们希望某些量保持 $\Theta(1)$ 的阶数（不发散也不消失）。
+
+![muP Intro](images/25_mup_intro.png)
+
+μP 基于两个**谱条件 (Spectral Conditions)**：
+
+![muP Conditions](images/26_mup_conditions.png)
+
+**条件 A1 (激活值稳定性)**: 在初始化时，每个激活值坐标应为 $\Theta(1)$。
+$$ \|h^{(l)}\|_2 = \Theta(\sqrt{n_l}) $$
+（范数随维度增长，因为坐标之间独立）
+
+**条件 A2 (更新量稳定性)**: 经过一次梯度步进后，激活值的变化应为 $\Theta(1)$。
+$$ \|\Delta h^{(l)}\|_2 = \Theta(\sqrt{n_l}) $$
+
+### 7.2 推导初始化规则 (Condition A1)
+
+考虑一个**深度线性网络** (Deep Linear Network)：
+$$ h^{(l)} = W^{(l)} h^{(l-1)} $$
+无非线性，只为简化推导。
+
+**初始化**: $W^{(l)} \sim \mathcal{N}(0, \sigma_l^2)$
+
+**随机矩阵理论**: 当 $n_l, n_{l-1} \to \infty$ 时，高斯矩阵的算子范数满足：
+$$ \|W^{(l)}\|_{op} \approx \sigma_l \cdot (\sqrt{n_l} + \sqrt{n_{l-1}}) $$
+
+![muP Init Derivation](images/27_mup_init_derivation.png)
+
+**归纳证明**:
+- 假设 $\|h^{(l-1)}\|_2 = \sqrt{n_{l-1}}$
+- 选取 $\sigma_l = \frac{1}{\sqrt{n_{l-1}}} \cdot \min\left(1, \sqrt{\frac{n_{l-1}}{n_l}}\right)$
+- 代入可得 $\|h^{(l)}\|_2 = \sqrt{n_l}$
+
+**结论**: 初始化标准差应约为 **$1/\sqrt{\text{fan\_in}}$**（与 Kaiming 初始化一致）。
+
+### 7.3 推导学习率规则 (Condition A2)
+
+现在考虑一次梯度更新。对于 SGD：
+$$ \Delta W^{(l)} = -\eta \cdot \nabla_W \mathcal{L} = -\eta \cdot \frac{\partial \mathcal{L}}{\partial h^{(l)}} (h^{(l-1)})^T $$
+
+![muP Update Derivation](images/28_mup_update_derivation.png)
+
+**关键假设**: 如果学习过程是良好的，那么一次梯度步进后 Loss 的变化也应为 $\Theta(1)$。
+$$ \Delta \mathcal{L} = \Theta(1) $$
+
+通过链式法则和范数分析，可以推导出：
+$$ \eta_{SGD} = \frac{n_l}{n_{l-1}} \quad (\text{fan\_out / fan\_in}) $$
+
+但对于 **Adam** 优化器，由于其对梯度进行归一化，推导结果不同：
+$$ \eta_{Adam} = \frac{1}{n_{l-1}} \quad (\text{1 / fan\_in}) $$
+
+### 7.4 μP 与 SP 对比
+
+![muP Final Formula](images/29_mup_final_formula.png)
+
+| | **标准参数化 (SP)** | **μP** |
+|---|---|---|
+| **初始化** | $1/\sqrt{\text{fan\_in}}$ | $1/\sqrt{\text{fan\_in}}$ (基本相同) |
+| **学习率 (SGD)** | 全局常数 | $\text{fan\_out}/\text{fan\_in}$ (基本不变) |
+| **学习率 (Adam)** | 全局常数 | $1/\text{fan\_in}$ (**关键区别**) |
+
+> **核心差异**: 对于 Adam，μP 要求**每层学习率按宽度缩放**，这是最大的实际变化。
+
+![muP SP Comparison](images/30_mup_sp_comparison.png)
+
+### 7.5 物理学视角：重正化
+
+> **讲师观点**: 这种"在取极限时保持量级稳定"的思想，与物理学中的**重正化 (Renormalization)** 非常相似。这是一个在深度学习中成功应用物理直觉的有趣案例。
+
+---
+
+## 8. μP 的实证验证 (Lingle 论文)
+
+讲师介绍了一篇独立研究者 Lingle 的预印本：*A Large-Scale Exploration of μ-Transfer*。该论文通过大量消融实验验证了 μP 的鲁棒性。
+
+![Lingle Overview](images/31_lingle_overview.png)
+
+### 8.1 实验设置
+
+- **架构**: 标准 Transformer，自回归预训练
+- **缩放维度**: 仅缩放宽度 (Width)，固定深度
+- **目标**: 验证最优学习率是否在不同宽度下保持稳定
+
+### 8.2 μP 是否有效？
+
+![Lingle LR Transfer](images/32_lingle_lr_transfer.png)
+
+**结论**: 是的！从宽度 128 到 2048，最优学习率保持在同一位置。
+
+### 8.3 对激活函数的鲁棒性
+
+![Lingle Activations](images/33_lingle_activations.png)
+
+- **SwiGLU**, **Squared ReLU** 和基线 **ReLU** 的最优学习率**相同**
+- μP 对非线性类型**鲁棒**
+
+### 8.4 对 Batch Size 的鲁棒性
+
+![Lingle Batch Size](images/34_lingle_batch_size.png)
+
+- Batch Size 变化 4 倍（上下），最优学习率**稳定**
+- μP 对 Batch Size 变化**鲁棒**
+
+### 8.5 对初始化变体的鲁棒性
+
+![Lingle Init](images/35_lingle_init.png)
+
+- Query 矩阵初始化为 0（使初始注意力均匀）
+- Unembedding 层使用 SP 或 μP 缩放
+- 以上变体**不影响**最优学习率
+
+### 8.6 μP 的局限性
+
+**Learnable Gains (RMSNorm 的可学习增益)**:
+- 添加可学习增益会**破坏** μP
+- 需要移除 Bias/Gain 才能使 μP 正常工作
+
+**非标准优化器 (Lion)**:
+
+![Lingle Optimizer](images/36_lingle_optimizer.png)
+
+- Lion 优化器（符号梯度）会**破坏** μP
+- 这是预期的，因为 μP 是为 Adam/SGD 设计的
+
+**强权重衰减 (Weight Decay)**:
+
+![Lingle Weight Decay](images/37_lingle_weight_decay.png)
+
+- 非常强的权重衰减会导致 μP **失效**
+- 这是少数几个显著的失败案例之一
+
+### 8.7 大规模验证 (10B 参数)
+
+![Lingle 10B Validation](images/38_lingle_10b_validation.png)
+
+- 在小中规模上进行完整研究
+- 选定最优学习率后，直接扩展到 10B 参数
+- **学习率保持最优**，这是一个很好的验证
+
+> **备注**: Meta 的 Llama-1 使用了 μP，这也是一个间接验证。但目前 μP 并非行业共识。
+
+---
+
+## 9. 总结与最佳实践
+
+![Summary](images/39_summary.png)
+
+### 9.1 Scaling 实战中的常见策略
+
+1. **超参数选择**:
+   - 使用 Scaling Law 拟合 Batch Size 和 Learning Rate (DeepSeek 风格)
+   - 或使用 μP 保持超参数跨规模稳定 (Cerebras/MiniCPM 风格)
+
+2. **学习率调度**:
+   - 考虑使用 **WSD (Warm-up Stable Decay)** 代替 Cosine
+   - WSD 性能相当，但允许以 $O(n)$ 成本进行数据缩放分析
+
+3. **Chinchilla 比例**:
+   - **20:1 只是起点**，现代模型通常使用更高的 Token/Parameter 比
+   - Llama 3: 39:1, MiniCPM: 192:1, Hunyuan (MoE): 96:1
+   - 应根据实际情况进行 IsoFLOP 分析
+
+4. **μP 的使用建议**:
+   - 对 Adam 优化器，实现每层学习率缩放 ($1/\text{fan\_in}$)
+   - 移除 RMSNorm 的可学习 Gain
+   - 避免使用非标准优化器 (如 Lion)
+
+### 9.2 课堂问答精选
+
+**Q: μP 的主要变化是初始化吗？**
+> A: 有两个变化：初始化和学习率。但如果你已经在用 Kaiming 初始化 ($1/\sqrt{\text{fan\_in}}$)，初始化已经正确了。**最大的实际变化是每层学习率的缩放**。
+
+**Q: DeepSeek 使用全局学习率，是否意味着他们的更新不是 $\Theta(1)$？**
+> A: 是的。如果你看他们的 Scaling Law 拟合图，学习率确实随规模下降。这是为了补偿更大模型产生的更大更新。μP 只是让这种调整变得不必要，但**即使不用 μP，只要你调对了学习率，也能训练好模型**。
+
+**Q: 架构假设是什么？能用于 Transformer 吗？**
+> A: 推导是基于深度线性网络的，这是最简化的模型。但有论文讨论了如何将这些论点扩展到非线性、Attention 层和 GLU 等。每个架构组件都需要仔细分析。
+
+---
+
+## 10. 拓展阅读
+
+建议按以下顺序深入学习：
+1. **WSD 调度**: MiniCPM 论文相关章节
+2. **μP 原理**: Yang et al. "Tensor Programs V: Tuning Large Neural Networks via Zero-Shot Hyperparameter Transfer"
+3. **μP 实证**: Lingle "A Large-Scale Exploration of μ-Transfer"
+4. **实用指南**: "A Practitioner's Guide to μP" (博客)
